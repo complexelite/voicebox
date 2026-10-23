@@ -1,11 +1,14 @@
 """FastAPI application factory, middleware, and lifecycle events."""
 
 import asyncio
+import base64
+import hmac
 import logging
 import os
 import re
 import subprocess
 import sys
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -105,6 +108,7 @@ if not os.environ.get("MIOPEN_LOG_LEVEL"):
 import torch
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from . import __version__, config, database
 from .services import tts, transcribe, llm
@@ -156,6 +160,70 @@ def create_app() -> FastAPI:
 
     _configure_cors(application)
     application.add_middleware(ClientIdMiddleware)
+
+    # Voicebox is designed as a local-first application and the upstream
+    # server deliberately has no authentication. This deployment can be
+    # internet-facing, so require the Studio-managed key at the HTTP boundary.
+    # The browser uses HTTP Basic (native browser credential prompt); Studio's
+    # private server-to-server adapter uses Bearer. No browser storage token.
+    api_key = os.environ.get("VOICEBOX_API_KEY", "").strip()
+    require_auth = os.environ.get("VOICEBOX_REQUIRE_AUTH", "").strip().lower() in {"1", "true", "yes", "on"}
+    public_origin = os.environ.get("VOICEBOX_PUBLIC_ORIGIN", "https://voicebox.complexelite.com").rstrip("/")
+    if require_auth and len(api_key) < 32:
+        raise RuntimeError("VOICEBOX_API_KEY must contain at least 32 characters when VOICEBOX_REQUIRE_AUTH is enabled")
+    failed_auth: dict[str, list[float]] = {}
+
+    @application.middleware("http")
+    async def protect_remote_access(request, call_next):
+        if not api_key:
+            return await call_next(request)
+
+        # Docker's own health probe is the only unauthenticated exception.
+        peer = request.client.host if request.client else ""
+        if request.url.path == "/health" and peer in {"127.0.0.1", "::1", "localhost"}:
+            return await call_next(request)
+
+        authorization = request.headers.get("authorization", "")
+        authenticated = False
+        scheme, _, credential = authorization.partition(" ")
+        if scheme.lower() == "bearer":
+            authenticated = hmac.compare_digest(credential.strip(), api_key)
+        elif scheme.lower() == "basic":
+            try:
+                decoded = base64.b64decode(credential.strip(), validate=True).decode("utf-8")
+                username, separator, password = decoded.partition(":")
+                authenticated = bool(separator) and hmac.compare_digest(username, "voicebox") and hmac.compare_digest(password, api_key)
+            except (ValueError, UnicodeDecodeError):
+                authenticated = False
+        if not authenticated:
+            now = time.monotonic()
+            attempts = [stamp for stamp in failed_auth.get(peer, []) if now - stamp < 300]
+            if len(attempts) >= 10:
+                failed_auth[peer] = attempts
+                return JSONResponse({"detail": "Too many authentication attempts. Try again later."}, status_code=429, headers={"Retry-After": "300"})
+            attempts.append(now)
+            failed_auth[peer] = attempts
+            if len(failed_auth) > 4096:
+                for address in list(failed_auth)[:1024]:
+                    if not failed_auth[address] or now - failed_auth[address][-1] >= 300:
+                        failed_auth.pop(address, None)
+            return JSONResponse(
+                {"detail": "Authentication required."},
+                status_code=401,
+                headers={"WWW-Authenticate": 'Basic realm="Voicebox", charset="UTF-8"'},
+            )
+
+        # Reject cross-origin state changes to protect browser-cached Basic
+        # credentials from CSRF. Native clients without Origin remain usable.
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            origin = request.headers.get("origin")
+            fetch_site = request.headers.get("sec-fetch-site", "").lower()
+            if origin and origin.rstrip("/") != public_origin:
+                return JSONResponse({"detail": "Cross-origin request rejected."}, status_code=403)
+            if not origin and fetch_site not in {"", "none"}:
+                return JSONResponse({"detail": "Cross-origin request rejected."}, status_code=403)
+        return await call_next(request)
+
     register_routers(application)
     application.mount("/mcp", mcp_app)
     logger.info("MCP: mounted at /mcp")
