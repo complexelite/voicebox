@@ -1,6 +1,11 @@
 services:
   voicebox:
     image: ghcr.io/complexelite/voicebox:0.6.1
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PYTORCH_VARIANT: cpu
     restart: unless-stopped
     expose:
       - "17493"
