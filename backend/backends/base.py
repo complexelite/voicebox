@@ -53,8 +53,8 @@ def is_model_cached(
     Args:
         hf_repo: HuggingFace repo ID (e.g. "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
         weight_extensions: File extensions that count as model weights.
-        required_files: If set, check that these specific filenames exist
-                        in snapshots instead of checking by extension.
+        required_files: If set, require these filenames in snapshots in
+                        addition to at least one model weight file.
 
     Returns:
         True if model is fully cached, False if missing or incomplete.
@@ -75,12 +75,14 @@ def is_model_cached(
         if not snapshots_dir.exists():
             return False
 
-        if required_files:
-            # Check that every required filename exists somewhere in snapshots
-            for fname in required_files:
-                if not any(snapshots_dir.rglob(fname)):
-                    return False
-            return True
+        # Qwen3-TTS can load its large weight file while still missing the
+        # tokenizer assets that from_pretrained() loads afterward. Treat the
+        # repository as ready only when those runtime-critical files exist.
+        if required_files is None and "Qwen3-TTS-" in hf_repo:
+            required_files = ["config.json", "generation_config.json", "speech_tokenizer/config.json"]
+
+        if required_files and any(not any(snapshots_dir.rglob(fname)) for fname in required_files):
+            return False
 
         # Check that at least one weight file exists
         for ext in weight_extensions:

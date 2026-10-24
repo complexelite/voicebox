@@ -505,6 +505,7 @@ class ModelStatus(BaseModel):
     """Response model for model status."""
 
     model_name: str
+    engine: Optional[str] = None
     display_name: str
     hf_repo_id: Optional[str] = None  # HuggingFace repository ID
     downloaded: bool

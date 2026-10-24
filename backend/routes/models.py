@@ -312,6 +312,7 @@ async def get_model_status():
     model_configs = [
         {
             "model_name": cfg.model_name,
+            "engine": cfg.engine,
             "display_name": cfg.display_name,
             "hf_repo_id": cfg.hf_repo_id,
             "aux_hf_repo_ids": cfg.aux_hf_repo_ids,
@@ -405,6 +406,13 @@ async def get_model_status():
                 except Exception:
                     pass
 
+            # Use the backend's complete cache check, not just the presence
+            # of a weight file. Some models (notably Qwen3-TTS) require
+            # tokenizer/config assets loaded after their weights.
+            if downloaded and not is_model_cached(config["hf_repo_id"]):
+                downloaded = False
+                size_mb = None
+
             # A model whose backend also pulls auxiliary repos at load time
             # (e.g. Chatterbox MLX's S3 tokenizer) is only downloaded once
             # those are present too, matching the backend's own cache check.
@@ -425,6 +433,7 @@ async def get_model_status():
             statuses.append(
                 models.ModelStatus(
                     model_name=config["model_name"],
+                    engine=config["engine"],
                     display_name=config["display_name"],
                     hf_repo_id=config["hf_repo_id"],
                     downloaded=downloaded,
@@ -444,6 +453,7 @@ async def get_model_status():
             statuses.append(
                 models.ModelStatus(
                     model_name=config["model_name"],
+                    engine=config["engine"],
                     display_name=config["display_name"],
                     hf_repo_id=config["hf_repo_id"],
                     downloaded=False,
