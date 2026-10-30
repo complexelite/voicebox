@@ -5,10 +5,13 @@ import io
 import json as _json
 import logging
 import math
+import re
+import shutil
 import subprocess
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -101,6 +104,137 @@ async def extract_profile_sample(
             source_path.unlink(missing_ok=True)
         if output_path:
             output_path.unlink(missing_ok=True)
+
+
+YOUTUBE_VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+YOUTUBE_EXTRACT_MAX_SECONDS = 29.0
+YOUTUBE_EXTRACT_MAX_BYTES = 250 * 1024 * 1024
+YOUTUBE_EXTRACT_SEMAPHORE = asyncio.Semaphore(1)
+
+
+def _youtube_video_id(value: str) -> str | None:
+    """Accept a single ordinary YouTube video URL and return only its video ID."""
+    try:
+        parsed = urlsplit(value.strip())
+        if parsed.scheme != "https" or parsed.username or parsed.password or parsed.port:
+            return None
+        host = (parsed.hostname or "").lower().removeprefix("www.")
+        path = [part for part in parsed.path.split("/") if part]
+        if host == "youtu.be":
+            candidate = path[0] if path else ""
+        elif host in {"youtube.com", "m.youtube.com", "music.youtube.com", "youtube-nocookie.com"}:
+            if path and path[0] in {"shorts", "embed", "live"}:
+                candidate = path[1] if len(path) > 1 else ""
+            else:
+                candidate = parse_qs(parsed.query).get("v", [""])[0]
+        else:
+            return None
+        return candidate if YOUTUBE_VIDEO_ID.fullmatch(candidate) else None
+    except ValueError:
+        return None
+
+
+def _download_youtube_sample(video_id: str, start_seconds: float, end_seconds: float, yt_dlp: str, ffmpeg: str) -> tuple[Path, Path]:
+    """Download the selected public clip to disk, normalize to WAV, and return cleanup paths."""
+    temp_root = config.get_data_dir() / "tmp" / "youtube"
+    temp_root.mkdir(parents=True, exist_ok=True)
+    work_dir = Path(tempfile.mkdtemp(prefix="clip-", dir=temp_root))
+    canonical_url = f"https://www.youtube.com/watch?v={video_id}"
+    output_template = str(work_dir / "source.%(ext)s")
+    section = f"*{start_seconds:.3f}-{end_seconds:.3f}"
+    command = [
+        yt_dlp,
+        "--ignore-config", "--no-playlist", "--no-progress", "--no-warnings",
+        "--no-write-info-json", "--no-write-thumbnail", "--no-write-subs", "--no-write-auto-subs",
+        "--js-runtimes", "deno",
+        "--format", "bestaudio/best", "--download-sections", section,
+        "--force-keyframes-at-cuts", "--max-filesize", "250M",
+        "--socket-timeout", "20", "--retries", "1", "--fragment-retries", "1",
+        "--output", output_template, canonical_url,
+    ]
+    try:
+        free_bytes = shutil.disk_usage(temp_root).free
+        if free_bytes < YOUTUBE_EXTRACT_MAX_BYTES + 50 * 1024 * 1024:
+            raise HTTPException(status_code=507, detail="Voicebox storage is too low for temporary clip extraction.")
+        result = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
+        if result.returncode != 0:
+            logger.info("YouTube audio extraction failed for video ID %s", video_id)
+            raise HTTPException(
+                status_code=422,
+                detail="Voicebox could not retrieve audio for this video. It may be unavailable or block extraction; try an authorised source file instead.",
+            )
+
+        candidates = [
+            path for path in work_dir.glob("source.*")
+            if path.is_file() and not path.name.endswith((".part", ".ytdl", ".json", ".jpg", ".webp", ".vtt"))
+        ]
+        if not candidates:
+            raise HTTPException(status_code=422, detail="No audio was returned for the selected section.")
+        source_path = max(candidates, key=lambda path: path.stat().st_size)
+        if source_path.stat().st_size > YOUTUBE_EXTRACT_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="The selected audio segment exceeded the temporary download limit.")
+
+        output_path = work_dir / "voice-sample.wav"
+        normalize_command = [
+            ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+            "-i", str(source_path), "-t", f"{end_seconds - start_seconds:.3f}",
+            "-vn", "-ac", "1", "-ar", "24000", "-c:a", "pcm_s16le", str(output_path),
+        ]
+        normalized = subprocess.run(normalize_command, capture_output=True, text=True, timeout=45, check=False)
+        if normalized.returncode != 0 or not output_path.exists() or output_path.stat().st_size <= 44:
+            raise HTTPException(status_code=422, detail="Voicebox could not convert the selected section into a voice sample.")
+        return output_path, work_dir
+    except subprocess.TimeoutExpired as exc:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        raise HTTPException(status_code=408, detail="YouTube audio extraction took too long. Try another video or use an authorised source file.") from exc
+    except Exception:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        raise
+
+
+@router.post("/profiles/extract-youtube-sample")
+async def extract_youtube_profile_sample(
+    video_url: str = Form(...),
+    start_seconds: float = Form(...),
+    end_seconds: float = Form(...),
+    authorized: bool = Form(...),
+):
+    """Extract one authorised public YouTube clip; temporary source media is deleted after response."""
+    from ..utils.ffmpeg import find_ffmpeg
+
+    video_id = _youtube_video_id(video_url)
+    if not video_id:
+        raise HTTPException(status_code=400, detail="Enter a valid YouTube video URL.")
+    if not authorized:
+        raise HTTPException(status_code=403, detail="Confirm you have permission to use this media and the speaker's voice.")
+    if not math.isfinite(start_seconds) or not math.isfinite(end_seconds):
+        raise HTTPException(status_code=400, detail="Clip start and end must be valid times.")
+    clip_duration = end_seconds - start_seconds
+    if start_seconds < 0 or clip_duration <= 0 or clip_duration > YOUTUBE_EXTRACT_MAX_SECONDS:
+        raise HTTPException(status_code=400, detail="Choose a clip up to 29 seconds long.")
+
+    yt_dlp = shutil.which("yt-dlp")
+    ffmpeg = find_ffmpeg()
+    if not yt_dlp or not ffmpeg:
+        raise HTTPException(status_code=503, detail="YouTube clip extraction is not configured on this Voicebox server.")
+
+    try:
+        await asyncio.wait_for(YOUTUBE_EXTRACT_SEMAPHORE.acquire(), timeout=5)
+    except TimeoutError as exc:
+        raise HTTPException(status_code=429, detail="Another YouTube clip is being extracted. Try again shortly.") from exc
+    try:
+        output_path, work_dir = await asyncio.to_thread(
+            _download_youtube_sample, video_id, start_seconds, end_seconds, yt_dlp, ffmpeg
+        )
+    finally:
+        YOUTUBE_EXTRACT_SEMAPHORE.release()
+    return FileResponse(
+        output_path,
+        media_type="audio/wav",
+        filename="youtube-voice-sample.wav",
+        headers={"Cache-Control": "no-store"},
+        background=BackgroundTask(shutil.rmtree, work_dir, ignore_errors=True),
+    )
 
 
 @router.post("/profiles", response_model=models.VoiceProfileResponse)

@@ -188,6 +188,23 @@ class ApiClient {
     return response.blob();
   }
 
+  async extractYouTubeProfileSample(videoUrl: string, startSeconds: number, endSeconds: number): Promise<Blob> {
+    const formData = new FormData();
+    formData.append('video_url', videoUrl);
+    formData.append('start_seconds', String(startSeconds));
+    formData.append('end_seconds', String(endSeconds));
+    formData.append('authorized', 'true');
+    const response = await fetch(`${this.getBaseUrl()}/profiles/extract-youtube-sample`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(formatErrorDetail(error.detail, `HTTP error! status: ${response.status}`));
+    }
+    return response.blob();
+  }
+
   async listProfileSamples(profileId: string): Promise<ProfileSampleResponse[]> {
     return this.request<ProfileSampleResponse[]>(`/profiles/${profileId}/samples`);
   }

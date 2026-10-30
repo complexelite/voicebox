@@ -108,6 +108,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy installed Python packages from builder stage
 COPY --from=backend-builder /install /usr/local
+# yt-dlp needs a JavaScript runtime for YouTube's challenge scripts. Deno is
+# yt-dlp's recommended runtime and runs those scripts with restricted permissions.
+COPY --from=denoland/deno:bin-2.9.8 /deno /usr/local/bin/deno
 
 # Copy backend application code
 COPY --chown=voicebox:voicebox backend/ /app/backend/

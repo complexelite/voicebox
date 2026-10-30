@@ -88,10 +88,11 @@ function timeLabel(seconds: number): string {
 
 interface YouTubeSampleSourceProps {
   onExtracted: (file: File) => void;
+  onExtractYouTube: (videoUrl: string, startSeconds: number, endSeconds: number) => Promise<Blob>;
   onExtract: (file: File, startSeconds: number, endSeconds: number) => Promise<Blob>;
 }
 
-export function YouTubeSampleSource({ onExtracted, onExtract }: YouTubeSampleSourceProps) {
+export function YouTubeSampleSource({ onExtracted, onExtractYouTube, onExtract }: YouTubeSampleSourceProps) {
   const [url, setUrl] = useState('');
   const videoId = useMemo(() => getVideoId(url), [url]);
   const [duration, setDuration] = useState(0);
@@ -212,6 +213,20 @@ export function YouTubeSampleSource({ onExtracted, onExtract }: YouTubeSampleSou
     }
   }
 
+  async function extractSelectedYouTubeClip() {
+    if (!videoId || !permissionConfirmed || selectedDuration < MIN_CLIP_SECONDS || selectedDuration > MAX_CLIP_SECONDS) return;
+    setError('');
+    setIsExtracting(true);
+    try {
+      const blob = await onExtractYouTube(url, startSeconds, endSeconds);
+      onExtracted(new File([blob], 'youtube-voice-sample.wav', { type: 'audio/wav' }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not retrieve audio for this video.');
+    } finally {
+      setIsExtracting(false);
+    }
+  }
+
   const selectedDuration = Math.max(0, endSeconds - startSeconds);
 
   return (
@@ -304,35 +319,43 @@ export function YouTubeSampleSource({ onExtracted, onExtract }: YouTubeSampleSou
         </>
       )}
 
-      <div className="space-y-3 rounded-xl border p-4">
-        <div className="space-y-1">
-          <Label htmlFor="voice-source-media" className="flex items-center gap-2 text-sm font-semibold"><Film className="h-4 w-4" /> Source media file</Label>
-          <p className="text-xs text-muted-foreground">The YouTube player provides preview and timing only. Upload the matching audio or video file you are authorised to use; Voicebox trims the selected time range on the server.</p>
-        </div>
-        <Input
-          key={videoId ?? 'no-video'}
-          id="voice-source-media"
-          type="file"
-          accept="audio/*,video/*,.mkv,.mov,.m4a,.flac,.ogg,.opus"
-          onChange={(event) => {
-            const file = event.target.files?.[0] ?? null;
-            if (file && file.size > 250 * 1024 * 1024) {
-              setSourceFile(null);
-              setError('Source file must be 250 MB or smaller.');
-              return;
-            }
-            setSourceFile(file);
-            setError('');
-          }}
-        />
+      {videoId && duration > 0 && (
+        <div className="space-y-3 rounded-xl border p-4">
         <label className="flex cursor-pointer items-start gap-2 text-sm">
           <input type="checkbox" checked={permissionConfirmed} onChange={(event) => setPermissionConfirmed(event.target.checked)} className="mt-1" />
-          <span>I have permission to use this media and the speaker’s voice to create this voice profile.</span>
+          <span>I own or am authorised to download and use this media, and I have permission to create this voice profile from the speaker’s voice.</span>
         </label>
-        <Button type="button" onClick={extractSelectedClip} disabled={!videoId || !sourceFile || !permissionConfirmed || selectedDuration < MIN_CLIP_SECONDS || selectedDuration > MAX_CLIP_SECONDS || isExtracting}>
-          <Scissors className="mr-2 h-4 w-4" />{isExtracting ? 'Extracting clip…' : `Extract ${selectedDuration.toFixed(1)}s audio segment`}
+        <p className="text-xs text-muted-foreground">Voicebox processes only the selected section, stores temporary media on its data disk, and removes the working files when extraction finishes. Private or restricted videos may not be available.</p>
+        <Button type="button" onClick={extractSelectedYouTubeClip} disabled={!permissionConfirmed || selectedDuration < MIN_CLIP_SECONDS || selectedDuration > MAX_CLIP_SECONDS || isExtracting}>
+          <Scissors className="mr-2 h-4 w-4" />{isExtracting ? 'Extracting selected audio…' : `Extract ${selectedDuration.toFixed(1)}s from YouTube`}
         </Button>
-      </div>
+        <details className="rounded-lg bg-muted/40 p-3">
+          <summary className="cursor-pointer text-sm font-medium">Use an authorised source file instead</summary>
+          <div className="mt-3 space-y-3">
+            <Label htmlFor="voice-source-media" className="flex items-center gap-2 text-sm"><Film className="h-4 w-4" /> Audio or video file</Label>
+            <Input
+              key={videoId ?? 'no-video'}
+              id="voice-source-media"
+              type="file"
+              accept="audio/*,video/*,.mkv,.mov,.m4a,.flac,.ogg,.opus"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                if (file && file.size > 250 * 1024 * 1024) {
+                  setSourceFile(null);
+                  setError('Source file must be 250 MB or smaller.');
+                  return;
+                }
+                setSourceFile(file);
+                setError('');
+              }}
+            />
+            <Button type="button" variant="outline" onClick={extractSelectedClip} disabled={!sourceFile || !permissionConfirmed || selectedDuration < MIN_CLIP_SECONDS || selectedDuration > MAX_CLIP_SECONDS || isExtracting}>
+              <Film className="mr-2 h-4 w-4" />{isExtracting ? 'Extracting clip…' : 'Extract from selected file'}
+            </Button>
+          </div>
+        </details>
+        </div>
+      )}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </div>
   );

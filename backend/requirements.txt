@@ -88,6 +88,9 @@ pedalboard>=0.9.0,<0.9.21
 # HTTP client (for CUDA backend download)
 httpx>=0.27.0
 
+# YouTube clip import (uses the bundled yt-dlp-ejs challenge scripts in the container).
+yt-dlp[default]==2026.10.26
+
 # MCP server (Model Context Protocol) — lets local AI agents call
 # voicebox_speak / voicebox_transcribe / voicebox_list_captures / voicebox_list_profiles
 fastmcp>=3.0,<4.0

@@ -1126,6 +1126,9 @@ export function ProfileForm() {
 
                             <TabsContent value="youtube" className="space-y-4">
                               <YouTubeSampleSource
+                                onExtractYouTube={(videoUrl, startSeconds, endSeconds) =>
+                                  apiClient.extractYouTubeProfileSample(videoUrl, startSeconds, endSeconds)
+                                }
                                 onExtract={(file, startSeconds, endSeconds) =>
                                   apiClient.extractProfileSample(file, startSeconds, endSeconds)
                                 }
