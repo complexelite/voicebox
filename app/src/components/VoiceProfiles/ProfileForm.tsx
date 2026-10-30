@@ -165,6 +165,7 @@ export function ProfileForm() {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const { isPlaying, playPause, cleanup: cleanupAudio } = useAudioPlayer();
   const isCreating = !editingProfileId;
+  const isWideYouTubeLayout = isCreating && voiceSource === 'clone' && sampleMode === 'youtube';
   const serverUrl = useServerStore((state) => state.serverUrl);
   const [profileEffectsChain, setProfileEffectsChain] = useState<EffectConfig[]>([]);
   const [effectsDirty, setEffectsDirty] = useState(false);
@@ -866,7 +867,7 @@ export function ProfileForm() {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-none w-screen h-screen left-0 top-0 translate-x-0 translate-y-0 rounded-none p-6 overflow-hidden">
-        <div className="max-w-5xl h-[85vh] mx-auto my-auto w-full flex flex-col overflow-hidden">
+        <div className={`h-[85vh] mx-auto my-auto w-full flex flex-col overflow-hidden ${isWideYouTubeLayout ? 'max-w-[min(96vw,1600px)]' : 'max-w-5xl'}`}>
           <DialogHeader>
             <DialogTitle className="text-2xl">
               {editingProfileId ? t('profileForm.editTitle') : t('profileForm.createTitle')}
@@ -910,9 +911,9 @@ export function ProfileForm() {
 
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="flex-1 min-h-0 flex flex-col">
-              <div className="grid gap-6 grid-cols-2 flex-1 min-h-0 overflow-hidden">
+              <div className={`grid gap-6 flex-1 min-h-0 ${isWideYouTubeLayout ? 'grid-cols-1 lg:grid-cols-[minmax(0,1.65fr)_minmax(320px,1fr)] overflow-y-auto lg:overflow-hidden' : 'grid-cols-2 overflow-hidden'}`}>
                 {/* Left column: Sample management */}
-                <div className="space-y-4 border-r pr-6 overflow-y-auto min-h-0">
+                <div className={`space-y-4 min-h-0 ${isWideYouTubeLayout ? 'lg:border-r lg:pr-6 lg:overflow-y-auto' : 'border-r pr-6 overflow-y-auto'}`}>
                   {isCreating ? (
                     <>
                       {/* Voice source selector */}
@@ -1253,7 +1254,7 @@ export function ProfileForm() {
                 </div>
 
                 {/* Right column: Profile info */}
-                <div className="space-y-4 overflow-y-auto min-h-0">
+                <div className={`space-y-4 min-h-0 ${isWideYouTubeLayout ? 'lg:overflow-y-auto' : 'overflow-y-auto'}`}>
                   {/* Avatar Upload */}
                   <FormField
                     control={form.control}
