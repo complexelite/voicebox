@@ -42,6 +42,6 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ github.repository }}:${{ github.sha }}
-            ghcr.io/${{ github.repository }}:0.6.4
+            ghcr.io/${{ github.repository }}:0.6.5
           cache-from: type=gha
           cache-to: type=gha,mode=max

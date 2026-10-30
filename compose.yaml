@@ -1,6 +1,6 @@
 services:
   voicebox:
-    image: ghcr.io/complexelite/voicebox:0.6.4
+    image: ghcr.io/complexelite/voicebox:0.6.5
     build:
       context: .
       dockerfile: Dockerfile

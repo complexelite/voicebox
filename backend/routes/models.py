@@ -1,6 +1,7 @@
 """Model management endpoints."""
 
 import asyncio
+import logging
 import shutil
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from ..utils.progress import get_progress_manager
 from ..utils.tasks import get_task_manager
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _get_dir_size(path: Path) -> int:
@@ -468,8 +470,10 @@ async def get_model_status():
 
 @router.post("/models/download")
 async def trigger_model_download(request: models.ModelDownloadRequest):
-    """Trigger download of a specific model."""
-    from ..backends import get_model_config, get_model_load_func
+    """Download model files to the persistent Hugging Face cache without loading weights."""
+    from huggingface_hub import constants as hf_constants, snapshot_download
+    from ..backends import get_model_config
+    from ..backends.base import is_model_cached, model_load_progress
 
     task_manager = get_task_manager()
     progress_manager = get_progress_manager()
@@ -478,16 +482,47 @@ async def trigger_model_download(request: models.ModelDownloadRequest):
     if not config:
         raise HTTPException(status_code=400, detail=f"Unknown model: {request.model_name}")
 
-    load_func = get_model_load_func(config)
+    repositories = (config.hf_repo_id, *config.aux_hf_repo_ids)
+    if all(is_model_cached(repo_id) for repo_id in repositories):
+        return {"message": f"Model {request.model_name} is already downloaded"}
+    if any(task.model_name == request.model_name for task in task_manager.get_pending_downloads()):
+        return {"message": f"Model {request.model_name} download is already in progress"}
 
     async def download_in_background():
         try:
-            result = load_func()
-            if asyncio.iscoroutine(result):
-                await result
+            # Hugging Face snapshots are streamed into the configured persistent
+            # cache. Do not call the engine loader here: loading PyTorch weights
+            # can consume several GB of RAM and previously killed the server.
+            def download_files():
+                if all(is_model_cached(repo_id) for repo_id in repositories):
+                    progress_manager.mark_complete(request.model_name)
+                    return
+
+                with model_load_progress(
+                    request.model_name,
+                    is_cached=False,
+                    filter_non_downloads=False,
+                ):
+                    for repo_id in repositories:
+                        snapshot_download(
+                            repo_id=repo_id,
+                            cache_dir=hf_constants.HF_HUB_CACHE,
+                            max_workers=2,
+                        )
+
+                missing = [repo_id for repo_id in repositories if not is_model_cached(repo_id)]
+                if missing:
+                    raise RuntimeError(
+                        "Download finished without all required model files: "
+                        + ", ".join(missing)
+                    )
+
+            await asyncio.to_thread(download_files)
             task_manager.complete_download(request.model_name)
         except Exception as e:
+            logger.exception("Model file download failed for %s", request.model_name)
             task_manager.error_download(request.model_name, str(e))
+            progress_manager.mark_error(request.model_name, str(e))
 
     task_manager.start_download(request.model_name)
 
@@ -495,7 +530,7 @@ async def trigger_model_download(request: models.ModelDownloadRequest):
         model_name=request.model_name,
         current=0,
         total=0,
-        filename="Connecting to HuggingFace...",
+        filename="Preparing model files in persistent storage...",
         status="downloading",
     )
 
