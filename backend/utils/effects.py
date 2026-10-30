@@ -198,6 +198,82 @@ BUILTIN_PRESETS: Dict[str, Dict[str, Any]] = {
             },
         ],
     },
+    "telephone": {
+        "name": "Telephone",
+        "sort_order": 3,
+        "description": "Classic narrow-band telephone sound with firm, even speech levels.",
+        "effects_chain": [
+            {"type": "highpass", "enabled": True, "params": {"cutoff_frequency_hz": 320.0}},
+            {"type": "lowpass", "enabled": True, "params": {"cutoff_frequency_hz": 3400.0}},
+            {"type": "compressor", "enabled": True, "params": {"threshold_db": -18.0, "ratio": 5.0, "attack_ms": 5.0, "release_ms": 70.0}},
+            {"type": "gain", "enabled": True, "params": {"gain_db": 3.0}},
+        ],
+    },
+    "megaphone": {
+        "name": "Megaphone",
+        "sort_order": 4,
+        "description": "Bright, focused, slightly roughened loudspeaker character.",
+        "effects_chain": [
+            {"type": "highpass", "enabled": True, "params": {"cutoff_frequency_hz": 500.0}},
+            {"type": "lowpass", "enabled": True, "params": {"cutoff_frequency_hz": 3000.0}},
+            {"type": "compressor", "enabled": True, "params": {"threshold_db": -22.0, "ratio": 8.0, "attack_ms": 2.0, "release_ms": 60.0}},
+            {"type": "gain", "enabled": True, "params": {"gain_db": 5.0}},
+        ],
+    },
+    "public_address": {
+        "name": "PSA / Announcer",
+        "sort_order": 5,
+        "description": "Clear, steady, intelligible delivery for announcements and public-service messages.",
+        "effects_chain": [
+            {"type": "highpass", "enabled": True, "params": {"cutoff_frequency_hz": 100.0}},
+            {"type": "lowpass", "enabled": True, "params": {"cutoff_frequency_hz": 9000.0}},
+            {"type": "compressor", "enabled": True, "params": {"threshold_db": -20.0, "ratio": 3.5, "attack_ms": 8.0, "release_ms": 120.0}},
+            {"type": "gain", "enabled": True, "params": {"gain_db": 2.0}},
+        ],
+    },
+    "airport_pa": {
+        "name": "Airport PA",
+        "sort_order": 6,
+        "description": "A slightly distant terminal loudspeaker with restrained room reflections.",
+        "effects_chain": [
+            {"type": "highpass", "enabled": True, "params": {"cutoff_frequency_hz": 220.0}},
+            {"type": "lowpass", "enabled": True, "params": {"cutoff_frequency_hz": 5200.0}},
+            {"type": "compressor", "enabled": True, "params": {"threshold_db": -18.0, "ratio": 4.0, "attack_ms": 6.0, "release_ms": 100.0}},
+            {"type": "reverb", "enabled": True, "params": {"room_size": 0.28, "damping": 0.65, "wet_level": 0.12, "dry_level": 0.9, "width": 0.55}},
+        ],
+    },
+    "podcast_studio": {
+        "name": "Podcast Studio",
+        "sort_order": 7,
+        "description": "Close, controlled speech with gentle compression and minimal room sound.",
+        "effects_chain": [
+            {"type": "highpass", "enabled": True, "params": {"cutoff_frequency_hz": 75.0}},
+            {"type": "compressor", "enabled": True, "params": {"threshold_db": -22.0, "ratio": 2.5, "attack_ms": 12.0, "release_ms": 160.0}},
+            {"type": "gain", "enabled": True, "params": {"gain_db": 1.5}},
+        ],
+    },
+    "warm_narrator": {
+        "name": "Warm Narrator",
+        "sort_order": 8,
+        "description": "Smooth, warm spoken-word tone for narration and long-form listening.",
+        "effects_chain": [
+            {"type": "highpass", "enabled": True, "params": {"cutoff_frequency_hz": 65.0}},
+            {"type": "lowpass", "enabled": True, "params": {"cutoff_frequency_hz": 11000.0}},
+            {"type": "compressor", "enabled": True, "params": {"threshold_db": -22.0, "ratio": 2.3, "attack_ms": 15.0, "release_ms": 180.0}},
+            {"type": "reverb", "enabled": True, "params": {"room_size": 0.18, "damping": 0.75, "wet_level": 0.08, "dry_level": 0.95, "width": 0.7}},
+        ],
+    },
+    "vintage_broadcast": {
+        "name": "Vintage Broadcast",
+        "sort_order": 9,
+        "description": "Warm, bandwidth-limited broadcast tone with a touch of room character.",
+        "effects_chain": [
+            {"type": "highpass", "enabled": True, "params": {"cutoff_frequency_hz": 180.0}},
+            {"type": "lowpass", "enabled": True, "params": {"cutoff_frequency_hz": 6500.0}},
+            {"type": "compressor", "enabled": True, "params": {"threshold_db": -19.0, "ratio": 3.0, "attack_ms": 10.0, "release_ms": 140.0}},
+            {"type": "reverb", "enabled": True, "params": {"room_size": 0.22, "damping": 0.7, "wet_level": 0.1, "dry_level": 0.92, "width": 0.65}},
+        ],
+    },
     "echo_chamber": {
         "name": "Echo Chamber",
         "sort_order": 2,

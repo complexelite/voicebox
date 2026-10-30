@@ -21,7 +21,7 @@ export interface ProfileFormDraft {
   language: string;
   personality: string;
   referenceText: string;
-  sampleMode: 'upload' | 'record' | 'system';
+  sampleMode: 'upload' | 'record' | 'system' | 'youtube';
   /** Which creation mode was open, so a restored draft reopens as itself. */
   voiceSource?: 'clone' | 'builtin' | 'design';
   /** Voice description for a designed profile. */

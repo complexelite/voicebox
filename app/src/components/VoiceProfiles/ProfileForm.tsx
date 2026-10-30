@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery } from '@tanstack/react-query';
-import { Edit2, Mic, Monitor, Music, Sparkles, Upload, X } from 'lucide-react';
+import { Edit2, Mic, Monitor, Music, Sparkles, Upload, X, Youtube } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -59,6 +59,7 @@ import { AudioSampleRecording } from './AudioSampleRecording';
 import { AudioSampleSystem } from './AudioSampleSystem';
 import { AudioSampleUpload } from './AudioSampleUpload';
 import { SampleList } from './SampleList';
+import { YouTubeSampleSource } from './YouTubeSampleSource';
 
 const MAX_AUDIO_DURATION_SECONDS = 30;
 const MAX_DESIGN_PROMPT_LENGTH = 500;
@@ -155,7 +156,7 @@ export function ProfileForm() {
   const { toast } = useToast();
   const [voiceSource, setVoiceSource] = useState<'clone' | 'builtin' | 'design'>('clone');
   const [designPrompt, setDesignPrompt] = useState<string>('');
-  const [sampleMode, setSampleMode] = useState<'upload' | 'record' | 'system'>('record');
+  const [sampleMode, setSampleMode] = useState<'upload' | 'record' | 'system' | 'youtube'>('record');
   const [audioDuration, setAudioDuration] = useState<number | null>(null);
   const [isValidatingAudio, setIsValidatingAudio] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -1045,7 +1046,7 @@ export function ProfileForm() {
                             className="pt-0"
                             value={sampleMode}
                             onValueChange={(v) => {
-                              const newMode = v as 'upload' | 'record' | 'system';
+                              const newMode = v as 'upload' | 'record' | 'system' | 'youtube';
                               // Cancel any active recordings when switching modes
                               if (isRecording && newMode !== 'record') {
                                 cancelRecording();
@@ -1057,7 +1058,7 @@ export function ProfileForm() {
                             }}
                           >
                             <TabsList
-                              className={`grid w-full ${platform.metadata.isTauri && isSystemAudioSupported ? 'grid-cols-3' : 'grid-cols-2'}`}
+                              className={`grid w-full ${platform.metadata.isTauri && isSystemAudioSupported ? 'grid-cols-4' : 'grid-cols-3'}`}
                             >
                               <TabsTrigger value="upload" className="flex items-center gap-2">
                                 <Upload className="h-4 w-4 shrink-0" />
@@ -1066,6 +1067,10 @@ export function ProfileForm() {
                               <TabsTrigger value="record" className="flex items-center gap-2">
                                 <Mic className="h-4 w-4 shrink-0" />
                                 {t('profileForm.sampleTabs.record')}
+                              </TabsTrigger>
+                              <TabsTrigger value="youtube" className="flex items-center gap-2">
+                                <Youtube className="h-4 w-4 shrink-0" />
+                                YouTube
                               </TabsTrigger>
                               {platform.metadata.isTauri && isSystemAudioSupported && (
                                 <TabsTrigger value="system" className="flex items-center gap-2">
@@ -1116,6 +1121,22 @@ export function ProfileForm() {
                                     isTranscribing={transcribe.isPending}
                                   />
                                 )}
+                              />
+                            </TabsContent>
+
+                            <TabsContent value="youtube" className="space-y-4">
+                              <YouTubeSampleSource
+                                onExtract={(file, startSeconds, endSeconds) =>
+                                  apiClient.extractProfileSample(file, startSeconds, endSeconds)
+                                }
+                                onExtracted={(file) => {
+                                  form.setValue('sampleFile', file, { shouldValidate: true });
+                                  setSampleMode('upload');
+                                  toast({
+                                    title: 'Voice clip ready',
+                                    description: 'The selected segment is ready to use. Add or transcribe its reference text below.',
+                                  });
+                                }}
                               />
                             </TabsContent>
 

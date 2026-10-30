@@ -560,6 +560,34 @@
         "name": "Radio",
         "description": "Thin AM-radio voice with band-pass filtering and light compression"
       },
+      "Telephone": {
+        "name": "Telephone",
+        "description": "Classic narrow-band telephone sound with firm, even speech levels."
+      },
+      "Megaphone": {
+        "name": "Megaphone",
+        "description": "Bright, focused, slightly roughened loudspeaker character."
+      },
+      "PSA / Announcer": {
+        "name": "PSA / Announcer",
+        "description": "Clear, steady, intelligible delivery for announcements and public-service messages."
+      },
+      "Airport PA": {
+        "name": "Airport PA",
+        "description": "A slightly distant terminal loudspeaker with restrained room reflections."
+      },
+      "Podcast Studio": {
+        "name": "Podcast Studio",
+        "description": "Close, controlled speech with gentle compression and minimal room sound."
+      },
+      "Warm Narrator": {
+        "name": "Warm Narrator",
+        "description": "Smooth, warm spoken-word tone for narration and long-form listening."
+      },
+      "Vintage Broadcast": {
+        "name": "Vintage Broadcast",
+        "description": "Warm, bandwidth-limited broadcast tone with a touch of room character."
+      },
       "Echo Chamber": {
         "name": "Echo Chamber",
         "description": "Spacious reverb with trailing echo"

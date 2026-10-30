@@ -172,6 +172,22 @@ class ApiClient {
     return response.json();
   }
 
+  async extractProfileSample(file: File, startSeconds: number, endSeconds: number): Promise<Blob> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('start_seconds', String(startSeconds));
+    formData.append('end_seconds', String(endSeconds));
+    const response = await fetch(`${this.getBaseUrl()}/profiles/extract-sample`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(formatErrorDetail(error.detail, `HTTP error! status: ${response.status}`));
+    }
+    return response.blob();
+  }
+
   async listProfileSamples(profileId: string): Promise<ProfileSampleResponse[]> {
     return this.request<ProfileSampleResponse[]>(`/profiles/${profileId}/samples`);
   }

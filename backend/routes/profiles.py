@@ -1,14 +1,18 @@
 """Voice profile endpoints."""
 
+import asyncio
 import io
 import json as _json
 import logging
+import math
+import subprocess
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+from starlette.background import BackgroundTask
 from sqlalchemy.orm import Session
 
 from .. import config, models
@@ -20,6 +24,83 @@ from ..services.profiles import _profile_to_response
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+MEDIA_EXTRACT_MAX_BYTES = 250 * 1024 * 1024
+MEDIA_EXTRACT_CHUNK_SIZE = 1024 * 1024
+MEDIA_EXTRACT_MAX_SECONDS = 30.0
+MEDIA_EXTRACT_EXTENSIONS = {
+    ".aac", ".flac", ".m4a", ".mkv", ".mov", ".mp3", ".mp4", ".ogg",
+    ".opus", ".wav", ".webm", ".wma",
+}
+
+
+@router.post("/profiles/extract-sample")
+async def extract_profile_sample(
+    file: UploadFile = File(...),
+    start_seconds: float = Form(...),
+    end_seconds: float = Form(...),
+):
+    """Extract a short WAV clip from user-provided media; never fetch media from a URL."""
+    from ..utils.ffmpeg import find_ffmpeg
+
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in MEDIA_EXTRACT_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Choose a supported audio or video file.")
+    if not math.isfinite(start_seconds) or not math.isfinite(end_seconds):
+        raise HTTPException(status_code=400, detail="Clip start and end must be valid times.")
+    clip_duration = end_seconds - start_seconds
+    if start_seconds < 0 or clip_duration <= 0 or clip_duration > MEDIA_EXTRACT_MAX_SECONDS:
+        raise HTTPException(status_code=400, detail="Choose a clip up to 30 seconds long.")
+
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        raise HTTPException(status_code=503, detail="Audio extraction requires FFmpeg on the Voicebox server.")
+
+    source_path: Path | None = None
+    output_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as source:
+            source_path = Path(source.name)
+            total_size = 0
+            while chunk := await file.read(MEDIA_EXTRACT_CHUNK_SIZE):
+                total_size += len(chunk)
+                if total_size > MEDIA_EXTRACT_MAX_BYTES:
+                    raise HTTPException(status_code=413, detail="Source media exceeds the 250 MB limit.")
+                source.write(chunk)
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as output:
+            output_path = Path(output.name)
+
+        command = [
+            ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+            "-ss", f"{start_seconds:.3f}", "-i", str(source_path),
+            "-t", f"{clip_duration:.3f}", "-vn", "-ac", "1", "-ar", "24000",
+            "-c:a", "pcm_s16le", str(output_path),
+        ]
+
+        def run_extractor() -> subprocess.CompletedProcess:
+            return subprocess.run(command, capture_output=True, text=True, timeout=90, check=False)
+
+        result = await asyncio.to_thread(run_extractor)
+        if result.returncode != 0 or not output_path.exists() or output_path.stat().st_size <= 44:
+            detail = (result.stderr or "No audio was found in the selected range.").strip()[:500]
+            raise HTTPException(status_code=422, detail=f"Could not extract audio from that range: {detail}")
+
+        response_path = output_path
+        output_path = None
+        return FileResponse(
+            response_path,
+            media_type="audio/wav",
+            filename="voice-sample.wav",
+            background=BackgroundTask(response_path.unlink, missing_ok=True),
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=408, detail="Audio extraction took too long. Try a shorter or smaller source file.")
+    finally:
+        if source_path:
+            source_path.unlink(missing_ok=True)
+        if output_path:
+            output_path.unlink(missing_ok=True)
 
 
 @router.post("/profiles", response_model=models.VoiceProfileResponse)
