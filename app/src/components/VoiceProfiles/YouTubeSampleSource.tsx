@@ -1,9 +1,12 @@
-import { Film, Scissors, Youtube } from 'lucide-react';
+import { Film, Pause, Play, Scissors, SkipBack, Youtube } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
+
+const MAX_CLIP_SECONDS = 29;
+const MIN_CLIP_SECONDS = 0.1;
 
 type Player = {
   destroy: () => void;
@@ -17,6 +20,7 @@ type Player = {
 
 type PlayerEvents = {
   onReady: (event: { target: Player }) => void;
+  onStateChange?: (event: { data: number }) => void;
 };
 
 type PlayerConstructor = new (element: HTMLElement, options: {
@@ -96,6 +100,7 @@ export function YouTubeSampleSource({ onExtracted, onExtract }: YouTubeSampleSou
   const [endSeconds, setEndSeconds] = useState(0);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [permissionConfirmed, setPermissionConfirmed] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const [error, setError] = useState('');
   const playerElement = useRef<HTMLDivElement>(null);
@@ -111,10 +116,11 @@ export function YouTubeSampleSource({ onExtracted, onExtract }: YouTubeSampleSou
     setCurrentTime(0);
     setStartSeconds(0);
     setEndSeconds(0);
+    setSourceFile(null);
+    setIsPlaying(false);
     setError('');
   }, [videoId]);
 
-  // Each URL gets its own embed player; the official player remains in control of playback.
   useEffect(() => {
     if (!videoId || !playerElement.current) return;
     let cancelled = false;
@@ -128,10 +134,13 @@ export function YouTubeSampleSource({ onExtracted, onExtract }: YouTubeSampleSou
           onReady: ({ target }) => {
             player.current = target;
             const length = target.getDuration();
-            durationRef.current = length;
-            setDuration(length);
-            setEndSeconds(Math.min(length, 15));
+            if (length > 0) {
+              durationRef.current = length;
+              setDuration(length);
+              setEndSeconds(Math.min(length, MAX_CLIP_SECONDS));
+            }
           },
+          onStateChange: ({ data }) => setIsPlaying(data === 1),
         },
       });
     }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Could not load the video.'));
@@ -152,12 +161,42 @@ export function YouTubeSampleSource({ onExtracted, onExtract }: YouTubeSampleSou
         if (length > 0 && length !== durationRef.current) {
           durationRef.current = length;
           setDuration(length);
-          setEndSeconds((value) => value > 0 ? Math.min(value, length) : Math.min(15, length));
+          setEndSeconds((value) => value > 0 ? Math.min(value, length, MAX_CLIP_SECONDS) : Math.min(length, MAX_CLIP_SECONDS));
         }
       } catch { /* Player has not finished initializing yet. */ }
     }, 250);
     return () => window.clearInterval(timer);
   }, [videoId]);
+
+  function setSelection(nextStart: number, nextEnd: number) {
+    const safeDuration = Math.max(0, duration);
+    let start = Math.max(0, Math.min(nextStart, safeDuration));
+    let end = Math.max(0, Math.min(nextEnd, safeDuration));
+    if (end - start > MAX_CLIP_SECONDS) {
+      if (start !== startSeconds) end = start + MAX_CLIP_SECONDS;
+      else start = end - MAX_CLIP_SECONDS;
+    }
+    if (end - start < MIN_CLIP_SECONDS) {
+      if (end !== endSeconds) end = Math.min(safeDuration, start + MIN_CLIP_SECONDS);
+      else start = Math.max(0, end - MIN_CLIP_SECONDS);
+    }
+    setStartSeconds(start);
+    setEndSeconds(end);
+  }
+
+  function markStart() {
+    setSelection(Math.min(currentTime, Math.max(0, duration - MIN_CLIP_SECONDS)), endSeconds);
+  }
+
+  function markEnd() {
+    setSelection(startSeconds, currentTime);
+  }
+
+  function previewSelectedClip() {
+    if (!player.current || !videoId || selectedDuration < MIN_CLIP_SECONDS) return;
+    player.current.loadVideoById({ videoId, startSeconds, endSeconds });
+    setIsPlaying(true);
+  }
 
   async function extractSelectedClip() {
     if (!sourceFile || !permissionConfirmed || endSeconds <= startSeconds) return;
@@ -173,60 +212,105 @@ export function YouTubeSampleSource({ onExtracted, onExtract }: YouTubeSampleSou
     }
   }
 
+  const selectedDuration = Math.max(0, endSeconds - startSeconds);
+
   return (
-    <div className="space-y-4 rounded-lg border p-4">
+    <div className="space-y-5 rounded-xl border bg-card p-4 sm:p-6">
       <div className="space-y-1">
-        <h3 className="flex items-center gap-2 text-sm font-semibold"><Youtube className="h-4 w-4" /> YouTube clip reference</h3>
-        <p className="text-sm text-muted-foreground">
-          Preview the video and mark a short segment. YouTube’s embedded player does not provide an audio-download API, so Voicebox will trim a source file you upload; it will not download media from the link.
-        </p>
+        <h3 className="flex items-center gap-2 text-base font-semibold"><Youtube className="h-5 w-5 text-red-600" /> YouTube sample editor</h3>
+        <p className="text-sm text-muted-foreground">Preview a video, scrub to the right moment, then mark a clip up to 29 seconds long.</p>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <Input
           value={url}
           onChange={(event) => setUrl(event.target.value)}
-          placeholder="https://www.youtube.com/watch?v=…"
+          placeholder="Paste a YouTube video link"
           aria-label="YouTube video URL"
         />
         <Button type="button" variant="outline" disabled={!videoId} onClick={() => player.current?.playVideo()}>
-          Preview
+          <Play /> Play video
         </Button>
       </div>
       {url && !videoId && <p className="text-sm text-destructive">Enter a valid YouTube video link.</p>}
 
       {videoId && (
         <>
-          <div className="aspect-video overflow-hidden rounded-md bg-black">
-            <div key={videoId} ref={playerElement} className="h-full w-full" />
-          </div>
-          {duration > 0 ? (
-            <div className="space-y-4">
-              <p className="text-xs text-muted-foreground">Preview position: {timeLabel(currentTime)} / {timeLabel(duration)}</p>
-              <Button type="button" size="sm" variant="outline" onClick={() => player.current?.loadVideoById({ videoId, startSeconds, endSeconds })} disabled={endSeconds <= startSeconds}>
-                Preview selected clip
-              </Button>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between"><Label>Clip start</Label><span className="text-sm tabular-nums">{timeLabel(startSeconds)}</span></div>
-                  <Slider min={0} max={Math.max(1, duration)} step={0.1} value={[startSeconds]} onValueChange={([value]) => setStartSeconds(Math.max(0, Math.min(value, endSeconds - 1)))} aria-label="Clip start time" />
-                  <Button type="button" size="sm" variant="outline" onClick={() => setStartSeconds(Math.min(currentTime, endSeconds - 1))}>Set start to preview position</Button>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between"><Label>Clip end</Label><span className="text-sm tabular-nums">{timeLabel(endSeconds)}</span></div>
-                  <Slider min={0} max={Math.max(1, duration)} step={0.1} value={[endSeconds]} onValueChange={([value]) => setEndSeconds(Math.min(Math.max(value, startSeconds + 1), startSeconds + 30, duration))} aria-label="Clip end time" />
-                  <Button type="button" size="sm" variant="outline" onClick={() => setEndSeconds(Math.min(currentTime, startSeconds + 30, duration))}>Set end to preview position</Button>
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">Selected clip: {(endSeconds - startSeconds).toFixed(1)} seconds (maximum 30 seconds).</p>
+          <div className="mx-auto w-full max-w-5xl overflow-hidden rounded-xl border bg-black shadow-sm">
+            <div className="aspect-video w-full">
+              <div key={videoId} ref={playerElement} className="h-full w-full" />
             </div>
-          ) : <p className="text-sm text-muted-foreground">Load the video preview to choose your clip times.</p>}
+          </div>
+
+          {duration > 0 ? (
+            <section aria-label="Clip timeline" className="space-y-4 rounded-xl bg-muted/40 p-4 sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">Choose a section</p>
+                  <p className="text-xs text-muted-foreground">Drag both handles or scrub the playhead, then set the in and out points.</p>
+                </div>
+                <span className="rounded-full border bg-background px-3 py-1 text-sm font-semibold tabular-nums">
+                  {timeLabel(startSeconds)} – {timeLabel(endSeconds)} <span className="text-muted-foreground">({selectedDuration.toFixed(1)}s / 29s max)</span>
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs tabular-nums text-muted-foreground"><span>{timeLabel(0)}</span><span>{timeLabel(duration)}</span></div>
+                <Slider
+                  min={0}
+                  max={Math.max(0.1, duration)}
+                  step={0.1}
+                  value={[startSeconds, endSeconds]}
+                  minStepsBetweenThumbs={1}
+                  onValueChange={([start, end]) => setSelection(start, end)}
+                  aria-label="Selected clip start and end"
+                  className="py-3"
+                />
+                <p className="text-center text-xs text-muted-foreground">Selected audio section</p>
+              </div>
+
+              <div className="space-y-2 rounded-lg border bg-background p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium tabular-nums">Playhead {timeLabel(currentTime)} <span className="text-muted-foreground">/ {timeLabel(duration)}</span></span>
+                  <div className="flex gap-2">
+                    <Button type="button" size="sm" variant="outline" aria-label="Preview selected section" onClick={previewSelectedClip}>
+                      <SkipBack /> <span className="hidden sm:inline">Preview selection</span>
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" aria-label={isPlaying ? 'Pause preview' : 'Play preview'} onClick={() => {
+                      if (isPlaying) { player.current?.pauseVideo(); setIsPlaying(false); }
+                      else { player.current?.playVideo(); setIsPlaying(true); }
+                    }}>
+                      {isPlaying ? <Pause /> : <Play />}
+                    </Button>
+                  </div>
+                </div>
+                <Slider
+                  min={0}
+                  max={Math.max(0.1, duration)}
+                  step={0.1}
+                  value={[Math.min(currentTime, duration)]}
+                  onValueChange={([value]) => setCurrentTime(value)}
+                  onValueCommit={([value]) => player.current?.seekTo(value, true)}
+                  aria-label="Scrub video playhead"
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={markStart}>Set start at playhead</Button>
+                <Button type="button" size="sm" variant="outline" onClick={markEnd}>Set end at playhead</Button>
+              </div>
+            </section>
+          ) : <p className="text-sm text-muted-foreground">Loading video details…</p>}
         </>
       )}
 
-      <div className="space-y-3 rounded-md bg-muted/50 p-3">
-        <Label htmlFor="voice-source-media" className="flex items-center gap-2"><Film className="h-4 w-4" /> Source audio or video file</Label>
+      <div className="space-y-3 rounded-xl border p-4">
+        <div className="space-y-1">
+          <Label htmlFor="voice-source-media" className="flex items-center gap-2 text-sm font-semibold"><Film className="h-4 w-4" /> Source media file</Label>
+          <p className="text-xs text-muted-foreground">The YouTube player provides preview and timing only. Upload the matching audio or video file you are authorised to use; Voicebox trims the selected time range on the server.</p>
+        </div>
         <Input
+          key={videoId ?? 'no-video'}
           id="voice-source-media"
           type="file"
           accept="audio/*,video/*,.mkv,.mov,.m4a,.flac,.ogg,.opus"
@@ -241,13 +325,12 @@ export function YouTubeSampleSource({ onExtracted, onExtract }: YouTubeSampleSou
             setError('');
           }}
         />
-        <p className="text-xs text-muted-foreground">Use media you own or are authorised to use. For YouTube content, supply a source file obtained through a permitted method. The full source is processed temporarily; only the selected segment is retained as the voice sample.</p>
         <label className="flex cursor-pointer items-start gap-2 text-sm">
           <input type="checkbox" checked={permissionConfirmed} onChange={(event) => setPermissionConfirmed(event.target.checked)} className="mt-1" />
           <span>I have permission to use this media and the speaker’s voice to create this voice profile.</span>
         </label>
-        <Button type="button" onClick={extractSelectedClip} disabled={!videoId || !sourceFile || !permissionConfirmed || endSeconds <= startSeconds || endSeconds - startSeconds > 30 || isExtracting}>
-          <Scissors className="mr-2 h-4 w-4" />{isExtracting ? 'Extracting clip…' : 'Extract selected audio'}
+        <Button type="button" onClick={extractSelectedClip} disabled={!videoId || !sourceFile || !permissionConfirmed || selectedDuration < MIN_CLIP_SECONDS || selectedDuration > MAX_CLIP_SECONDS || isExtracting}>
+          <Scissors className="mr-2 h-4 w-4" />{isExtracting ? 'Extracting clip…' : `Extract ${selectedDuration.toFixed(1)}s audio segment`}
         </Button>
       </div>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}

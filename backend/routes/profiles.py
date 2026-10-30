@@ -27,7 +27,7 @@ router = APIRouter()
 
 MEDIA_EXTRACT_MAX_BYTES = 250 * 1024 * 1024
 MEDIA_EXTRACT_CHUNK_SIZE = 1024 * 1024
-MEDIA_EXTRACT_MAX_SECONDS = 30.0
+MEDIA_EXTRACT_MAX_SECONDS = 29.0
 MEDIA_EXTRACT_EXTENSIONS = {
     ".aac", ".flac", ".m4a", ".mkv", ".mov", ".mp3", ".mp4", ".ogg",
     ".opus", ".wav", ".webm", ".wma",
@@ -50,7 +50,7 @@ async def extract_profile_sample(
         raise HTTPException(status_code=400, detail="Clip start and end must be valid times.")
     clip_duration = end_seconds - start_seconds
     if start_seconds < 0 or clip_duration <= 0 or clip_duration > MEDIA_EXTRACT_MAX_SECONDS:
-        raise HTTPException(status_code=400, detail="Choose a clip up to 30 seconds long.")
+        raise HTTPException(status_code=400, detail="Choose a clip up to 29 seconds long.")
 
     ffmpeg = find_ffmpeg()
     if not ffmpeg:
