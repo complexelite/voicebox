@@ -11,9 +11,15 @@ from sqlalchemy.orm import Session
 
 from .. import config, models
 from ..services import history, personality, profiles, tts
-from ..database import Generation as DBGeneration, VoiceProfile as DBVoiceProfile, get_db
+from ..database import (
+    Generation as DBGeneration,
+    RemoteVoiceJob,
+    VoiceProfile as DBVoiceProfile,
+    get_db,
+)
 from ..services.generation import release_generation_memory, run_generation
 from ..services.task_queue import cancel_generation as cancel_generation_job, enqueue_generation
+from .remote_workers import enqueue_remotely
 from ..utils.audio import load_audio
 from ..utils.tasks import get_task_manager
 
@@ -123,24 +129,32 @@ async def generate_speech(
             except Exception:
                 pass
 
-    enqueue_generation(
-        generation_id,
-        run_generation(
-            generation_id=generation_id,
-            profile_id=data.profile_id,
-            text=text,
-            language=data.language,
-            engine=engine,
-            model_size=model_size,
-            seed=data.seed,
-            normalize=data.normalize,
-            effects_chain=effects_chain_config,
-            instruct=data.instruct,
-            mode="generate",
-            max_chunk_chars=data.max_chunk_chars,
-            crossfade_ms=data.crossfade_ms,
+    remote_payload = {
+        "generation_id": generation_id, "profile_id": data.profile_id, "text": text,
+        "language": data.language, "engine": engine, "model_size": model_size,
+        "seed": data.seed, "instruct": data.instruct, "normalize": data.normalize,
+        "effects_chain": effects_chain_config, "mode": "generate",
+        "max_chunk_chars": data.max_chunk_chars, "crossfade_ms": data.crossfade_ms,
+    }
+    if not enqueue_remotely(db, remote_payload):
+        enqueue_generation(
+            generation_id,
+            run_generation(
+                generation_id=generation_id,
+                profile_id=data.profile_id,
+                text=text,
+                language=data.language,
+                engine=engine,
+                model_size=model_size,
+                seed=data.seed,
+                normalize=data.normalize,
+                effects_chain=effects_chain_config,
+                instruct=data.instruct,
+                mode="generate",
+                max_chunk_chars=data.max_chunk_chars,
+                crossfade_ms=data.crossfade_ms,
+            )
         )
-    )
 
     return generation
 
@@ -169,20 +183,27 @@ async def retry_generation(generation_id: str, db: Session = Depends(get_db)):
         text=gen.text,
     )
 
-    enqueue_generation(
-        generation_id,
-        run_generation(
-            generation_id=generation_id,
-            profile_id=gen.profile_id,
-            text=gen.text,
-            language=gen.language,
-            engine=gen.engine or "qwen",
-            model_size=gen.model_size or "1.7B",
-            seed=gen.seed,
-            instruct=gen.instruct,
-            mode="retry",
+    remote_payload = {
+        "generation_id": generation_id, "profile_id": gen.profile_id, "text": gen.text,
+        "language": gen.language, "engine": gen.engine or "qwen", "model_size": gen.model_size or "1.7B",
+        "seed": gen.seed, "instruct": gen.instruct, "normalize": False,
+        "effects_chain": None, "mode": "retry",
+    }
+    if not enqueue_remotely(db, remote_payload):
+        enqueue_generation(
+            generation_id,
+            run_generation(
+                generation_id=generation_id,
+                profile_id=gen.profile_id,
+                text=gen.text,
+                language=gen.language,
+                engine=gen.engine or "qwen",
+                model_size=gen.model_size or "1.7B",
+                seed=gen.seed,
+                instruct=gen.instruct,
+                mode="retry",
+            )
         )
-    )
 
     return models.GenerationResponse.model_validate(gen)
 
@@ -213,21 +234,28 @@ async def regenerate_generation(generation_id: str, db: Session = Depends(get_db
 
     version_id = str(uuid.uuid4())
 
-    enqueue_generation(
-        generation_id,
-        run_generation(
-            generation_id=generation_id,
-            profile_id=gen.profile_id,
-            text=gen.text,
-            language=gen.language,
-            engine=gen.engine or "qwen",
-            model_size=gen.model_size or "1.7B",
-            seed=gen.seed,
-            instruct=gen.instruct,
-            mode="regenerate",
-            version_id=version_id,
+    remote_payload = {
+        "generation_id": generation_id, "profile_id": gen.profile_id, "text": gen.text,
+        "language": gen.language, "engine": gen.engine or "qwen", "model_size": gen.model_size or "1.7B",
+        "seed": gen.seed, "instruct": gen.instruct, "normalize": True,
+        "effects_chain": None, "mode": "regenerate", "version_id": version_id,
+    }
+    if not enqueue_remotely(db, remote_payload):
+        enqueue_generation(
+            generation_id,
+            run_generation(
+                generation_id=generation_id,
+                profile_id=gen.profile_id,
+                text=gen.text,
+                language=gen.language,
+                engine=gen.engine or "qwen",
+                model_size=gen.model_size or "1.7B",
+                seed=gen.seed,
+                instruct=gen.instruct,
+                mode="regenerate",
+                version_id=version_id,
+            )
         )
-    )
 
     return models.GenerationResponse.model_validate(gen)
 
@@ -243,6 +271,21 @@ async def cancel_generation(generation_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Only active generations can be cancelled")
 
     cancellation_state = cancel_generation_job(generation_id)
+    remote_jobs = db.query(RemoteVoiceJob).filter(
+        RemoteVoiceJob.generation_id == generation_id,
+        RemoteVoiceJob.status.in_(["queued", "running"]),
+    ).all()
+    for remote_job in remote_jobs:
+        remote_job.status = "cancelled"
+        remote_job.lease_until = None
+    if remote_jobs:
+        db.commit()
+        task_manager = get_task_manager()
+        task_manager.complete_generation(generation_id)
+        await history.update_generation_status(
+            generation_id=generation_id, status="failed", db=db, error="Generation cancelled"
+        )
+        return {"message": "Remote generation cancelled"}
     if cancellation_state is None:
         # Row says active but the worker is no longer tracking it — the gen
         # coroutine exited without writing a terminal status (most often a

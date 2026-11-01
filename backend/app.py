@@ -183,6 +183,11 @@ def create_app() -> FastAPI:
         if request.url.path == "/health" and peer in {"127.0.0.1", "::1", "localhost"}:
             return await call_next(request)
 
+        # Remote GPU workers use a per-device token, validated by the worker
+        # router. Do not accept that scoped token for any other API route.
+        if request.url.path.startswith("/worker/v1/") and request.headers.get("x-voicebox-worker-token"):
+            return await call_next(request)
+
         authorization = request.headers.get("authorization", "")
         authenticated = False
         scheme, _, credential = authorization.partition(" ")
@@ -351,6 +356,8 @@ async def _run_startup(application: FastAPI) -> None:
     logger.info("Data directory: %s", config.get_data_dir())
 
     init_queue()
+    from .routes.remote_workers import remote_job_reaper
+    create_background_task(remote_job_reaper())
 
     # Mark stale "generating" records as failed -- leftovers from a killed process
     from sqlalchemy import text as sa_text
@@ -361,7 +368,8 @@ async def _run_startup(application: FastAPI) -> None:
             sa_text(
                 "UPDATE generations SET status = 'failed', "
                 "error = 'Server was shut down during generation' "
-                "WHERE status IN ('generating', 'loading_model')"
+                "WHERE status IN ('generating', 'loading_model') "
+                "AND id NOT IN (SELECT generation_id FROM remote_voice_jobs WHERE status IN ('queued', 'running'))"
             )
         )
         if result.rowcount > 0:

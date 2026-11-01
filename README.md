@@ -290,6 +290,8 @@ Use cases: agent dev loops (dictate a question, hear the answer in a cloned voic
 
 ### GPU Support
 
+You can also attach trusted home GPUs as outbound-only workers for the hosted Voicebox instance. See [`docs/REMOTE_GPU_WORKERS.md`](docs/REMOTE_GPU_WORKERS.md) for setup and security details.
+
 | Platform                 | Backend        | Notes                                          |
 | ------------------------ | -------------- | ---------------------------------------------- |
 | macOS (Apple Silicon)    | MLX (Metal)    | 4-5x faster via Neural Engine                  |

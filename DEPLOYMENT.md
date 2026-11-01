@@ -11,3 +11,7 @@ Only the local container health check can call `/health` without authentication.
 ## Data and models
 
 `voicebox-data-v2` stores profiles, samples and generated output. `voicebox-model-cache` stores downloaded model files. Back up both volumes before replacing or moving the service. The Compose resource limit is sized for the Complex Elite CPU-only VPS; larger models may require additional RAM or a GPU. Download models in Voicebox before selecting them for synthesis.
+
+## Private remote GPU workers
+
+Remote worker support is opt-in per generation: the hub sends compatible jobs to an enrolled, recently online worker and otherwise keeps using the current VPS queue. Worker credentials are individually revocable and scoped to worker endpoints. See [`docs/REMOTE_GPU_WORKERS.md`](docs/REMOTE_GPU_WORKERS.md) for enrollment, Mac setup, Windows/Linux setup, and operating guidance. Do not expose the workers' local Voicebox API ports publicly.

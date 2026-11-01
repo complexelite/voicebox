@@ -14,6 +14,8 @@ from .models import (
     Generation,
     GenerationVersion,
     ProfileChannelMapping,
+    RemoteVoiceJob,
+    RemoteVoiceWorker,
     VoiceProfile,
 )
 from .migrations import run_migrations

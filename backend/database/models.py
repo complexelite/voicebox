@@ -141,6 +141,37 @@ class GenerationVersion(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
+class RemoteVoiceWorker(Base):
+    """A trusted outbound-polling inference worker owned by this Voicebox."""
+
+    __tablename__ = "remote_voice_workers"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    token_hash = Column(String, nullable=False)
+    capabilities = Column(JSON, nullable=False, default=dict)
+    enabled = Column(Boolean, nullable=False, default=True)
+    last_seen_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class RemoteVoiceJob(Base):
+    """Durable lease record for one generation executed by a remote worker."""
+
+    __tablename__ = "remote_voice_jobs"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    generation_id = Column(String, nullable=False, index=True)
+    worker_id = Column(String, nullable=True, index=True)
+    payload = Column(JSON, nullable=False)
+    status = Column(String, nullable=False, default="queued", index=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    lease_until = Column(DateTime, nullable=True, index=True)
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+
+
 class EffectPreset(Base):
     """Saved effect chain preset."""
 
