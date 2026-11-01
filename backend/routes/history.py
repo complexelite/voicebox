@@ -14,7 +14,7 @@ from .. import config, models
 from ..services import export_import, history
 from ..utils.ffmpeg import encode_audio
 from ..utils.http import safe_content_disposition
-from ..database import Generation as DBGeneration, VoiceProfile as DBVoiceProfile, get_db
+from ..database import Generation as DBGeneration, RemoteVoiceJob as DBRemoteVoiceJob, RemoteVoiceWorker as DBRemoteVoiceWorker, VoiceProfile as DBVoiceProfile, get_db
 
 router = APIRouter()
 
@@ -91,6 +91,11 @@ async def get_generation(
         raise HTTPException(status_code=404, detail="Generation not found")
 
     gen, profile_name = result
+    remote_execution = db.query(DBRemoteVoiceJob, DBRemoteVoiceWorker.name).outerjoin(
+        DBRemoteVoiceWorker, DBRemoteVoiceJob.worker_id == DBRemoteVoiceWorker.id
+    ).filter(DBRemoteVoiceJob.generation_id == generation_id).order_by(
+        DBRemoteVoiceJob.created_at.desc()
+    ).first()
     return models.HistoryResponse(
         id=gen.id,
         profile_id=gen.profile_id,
@@ -104,6 +109,8 @@ async def get_generation(
         engine=gen.engine or "qwen",
         model_size=gen.model_size,
         status=gen.status or "completed",
+        worker_name=remote_execution[1] if remote_execution else None,
+        worker_status=remote_execution[0].status if remote_execution else None,
         error=gen.error,
         is_favorited=bool(gen.is_favorited),
         created_at=gen.created_at,

@@ -214,12 +214,59 @@ async def enroll_worker(data: EnrollRequest, db: Session = Depends(get_db)):
 async def list_workers(db: Session = Depends(get_db)):
     cutoff = _now() - timedelta(seconds=45)
     rows = db.query(RemoteVoiceWorker).order_by(RemoteVoiceWorker.created_at.desc()).all()
-    return [{
+    response = []
+    for w in rows:
+        active = db.query(RemoteVoiceJob, DBGeneration).join(
+            DBGeneration, RemoteVoiceJob.generation_id == DBGeneration.id
+        ).filter(
+            RemoteVoiceJob.worker_id == w.id,
+            RemoteVoiceJob.status == "running",
+        ).order_by(RemoteVoiceJob.created_at.desc()).first()
+        response.append({
         "id": w.id, "name": w.name, "enabled": w.enabled,
         "online": bool(w.last_seen_at and w.last_seen_at >= cutoff),
         "lastSeenAt": w.last_seen_at.isoformat() if w.last_seen_at else None,
         "capabilities": w.capabilities or {},
-    } for w in rows]
+        "activeJob": ({
+            "generationId": active[1].id,
+            "textPreview": (active[1].text or "")[:120],
+            "status": active[1].status,
+            "startedAt": active[0].updated_at.isoformat() if active[0].updated_at else None,
+        } if active else None),
+    })
+    return response
+
+
+@router.get("/workers/jobs")
+async def list_worker_jobs(db: Session = Depends(get_db)):
+    """Return the recent remote queue with assignment and execution state."""
+    rows = db.query(RemoteVoiceJob, DBGeneration, RemoteVoiceWorker.name).join(
+        DBGeneration, RemoteVoiceJob.generation_id == DBGeneration.id
+    ).outerjoin(
+        RemoteVoiceWorker, RemoteVoiceJob.worker_id == RemoteVoiceWorker.id
+    ).order_by(RemoteVoiceJob.created_at.desc()).limit(40).all()
+    counts = {key: 0 for key in ("queued", "claimed", "generating", "completed", "failed", "cpu_fallback")}
+    jobs = []
+    for job, generation, worker_name in rows:
+        state = job.status
+        if state == "running":
+            state = "generating" if generation.status == "generating" else "claimed"
+        if state in counts:
+            counts[state] += 1
+        jobs.append({
+            "id": job.id,
+            "generationId": generation.id,
+            "textPreview": (generation.text or "")[:120],
+            "profileId": generation.profile_id,
+            "engine": generation.engine or "qwen",
+            "modelSize": generation.model_size,
+            "generationStatus": generation.status,
+            "status": state,
+            "workerName": worker_name,
+            "createdAt": job.created_at.isoformat() if job.created_at else None,
+            "updatedAt": job.updated_at.isoformat() if job.updated_at else None,
+        })
+    return {"counts": counts, "jobs": jobs}
 
 
 @router.delete("/workers/{worker_id}")

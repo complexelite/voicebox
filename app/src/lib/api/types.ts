@@ -113,6 +113,8 @@ export interface GenerationResponse {
   engine?: string;
   model_size?: string;
   status: 'loading_model' | 'generating' | 'completed' | 'failed';
+  worker_name?: string | null;
+  worker_status?: string | null;
   error?: string;
   is_favorited?: boolean;
   created_at: string;
@@ -284,6 +286,29 @@ export interface RemoteVoiceWorker {
     gpu?: string;
     models?: Array<{ engine: string; model_size?: string | null }>;
   };
+  activeJob?: {
+    generationId: string;
+    textPreview: string;
+    status: string;
+    startedAt: string | null;
+  } | null;
+}
+
+export interface RemoteVoiceJobsResponse {
+  counts: Record<'queued' | 'claimed' | 'generating' | 'completed' | 'failed' | 'cpu_fallback', number>;
+  jobs: Array<{
+    id: string;
+    generationId: string;
+    textPreview: string;
+    profileId: string;
+    engine: string;
+    modelSize?: string | null;
+    generationStatus: string;
+    status: 'queued' | 'claimed' | 'generating' | 'completed' | 'failed' | 'cpu_fallback' | 'cancelled';
+    workerName?: string | null;
+    createdAt: string | null;
+    updatedAt: string | null;
+  }>;
 }
 
 export interface TranscriptionRequest {

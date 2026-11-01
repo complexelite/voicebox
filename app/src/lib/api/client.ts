@@ -56,6 +56,7 @@ import type {
   CloudLoginStartResponse,
   CloudStatus,
   RemoteVoiceWorker,
+  RemoteVoiceJobsResponse,
 } from './types';
 
 function formatErrorDetail(detail: unknown, fallback: string): string {
@@ -106,6 +107,10 @@ class ApiClient {
 
   async listRemoteWorkers(): Promise<RemoteVoiceWorker[]> {
     return this.request<RemoteVoiceWorker[]>('/workers');
+  }
+
+  async listRemoteVoiceJobs(): Promise<RemoteVoiceJobsResponse> {
+    return this.request<RemoteVoiceJobsResponse>('/workers/jobs');
   }
 
   async revokeRemoteWorker(workerId: string): Promise<{ ok: boolean; revoked: string }> {

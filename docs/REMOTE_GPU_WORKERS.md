@@ -28,7 +28,7 @@ Install `Voicebox.app` in `/Applications`, enroll the Mac, then run:
 python3 scripts/install_voicebox_worker_macos.py
 ```
 
-The LaunchAgent starts an isolated headless Voicebox API on loopback port 17494, uses the existing Hugging Face model cache, and starts the polling agent at login. It writes mirrored voice profiles and generation artifacts under `~/Library/Application Support/Voicebox Remote Worker/data`; those do not mix into the interactive Voicebox history. Logs are under `~/Library/Application Support/Voicebox Remote Worker/`.
+The LaunchAgent starts an isolated headless Voicebox API on loopback port 17494, uses the existing Hugging Face model cache, and starts the polling agent at login. It writes mirrored voice profiles and generation artifacts under `~/Library/Application Support/Voicebox Remote Worker/data`; those do not mix into the interactive Voicebox history. Logs are under `~/Library/Application Support/Voicebox Remote Worker/`. The worker sends macOS notifications when a job is assigned, starts generating, completes, or fails; notifications omit the voice script. macOS may require allowing notifications for `osascript`/Script Editor in System Settings. Set `VOICEBOX_DESKTOP_NOTIFICATIONS=0` in the LaunchAgent environment to turn them off.
 
 ## Windows NVIDIA worker
 
@@ -42,7 +42,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer
 
 The installer checks the local Voicebox API/GPU, installs per-user Python 3.12 if needed, asks once for the Voicebox admin API key without saving it, and enrolls a dedicated worker credential. It stores the scoped credential under `%USERPROFILE%\.config\voicebox\remote-worker.json` with an ACL limited to that Windows user and SYSTEM. It registers a Task Scheduler job to reconnect at sign-in and restart if the process exits. Keep the desktop Voicebox backend available after sign-in; the worker retries if it takes time to start. The API must stay bound to `127.0.0.1`, never `0.0.0.0`.
 
-Check the worker in Voicebox's authenticated `GET /workers` endpoint. Its model list contains only downloaded/loaded local models. The RTX 2060 Super should report CUDA when the Voicebox Windows CUDA backend is installed; if it reports CPU, install/enable CUDA in Voicebox before expecting GPU acceleration.
+Check the worker in Voicebox's authenticated `GET /workers` endpoint. Its model list contains only downloaded/loaded local models. The RTX 2060 Super should report CUDA when the Voicebox Windows CUDA backend is installed; if it reports CPU, install/enable CUDA in Voicebox before expecting GPU acceleration. Windows worker notifications use native Windows toast notifications while the worker runs in the signed-in user's session.
 
 ## Linux worker
 

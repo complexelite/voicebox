@@ -7,6 +7,9 @@ export function useHistory(query?: HistoryQuery) {
   return useQuery({
     queryKey: ['history', query],
     queryFn: () => apiClient.listHistory(query),
+    refetchInterval: (queryState) => queryState.state.data?.items.some(
+      (item) => item.status === 'loading_model' || item.status === 'generating',
+    ) ? 3000 : false,
   });
 }
 

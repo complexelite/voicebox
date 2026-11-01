@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from ..models import GenerationRequest, GenerationResponse, HistoryQuery, HistoryResponse, HistoryListResponse, GenerationVersionResponse, EffectConfig
-from ..database import Generation as DBGeneration, GenerationVersion as DBGenerationVersion, StoryItem as DBStoryItem, VoiceProfile as DBVoiceProfile
+from ..database import Generation as DBGeneration, GenerationVersion as DBGenerationVersion, RemoteVoiceJob as DBRemoteVoiceJob, RemoteVoiceWorker as DBRemoteVoiceWorker, StoryItem as DBStoryItem, VoiceProfile as DBVoiceProfile
 from .. import config
 
 logger = logging.getLogger(__name__)
@@ -246,11 +246,21 @@ async def list_generations(
     versions_by_generation = _get_versions_for_generations(
         [generation.id for generation, _ in results], db
     )
+    generation_ids = [generation.id for generation, _ in results]
+    execution_by_generation = {}
+    if generation_ids:
+        for remote_job, worker_name in db.query(
+            DBRemoteVoiceJob, DBRemoteVoiceWorker.name
+        ).outerjoin(
+            DBRemoteVoiceWorker, DBRemoteVoiceJob.worker_id == DBRemoteVoiceWorker.id
+        ).filter(DBRemoteVoiceJob.generation_id.in_(generation_ids)).all():
+            execution_by_generation[remote_job.generation_id] = (worker_name, remote_job.status)
 
     # Convert to HistoryResponse with profile_name
     items = []
     for generation, profile_name in results:
         versions, active_version_id = versions_by_generation[generation.id]
+        worker_name, worker_status = execution_by_generation.get(generation.id, (None, None))
         items.append(HistoryResponse(
             id=generation.id,
             profile_id=generation.profile_id,
@@ -264,6 +274,8 @@ async def list_generations(
             engine=generation.engine or "qwen",
             model_size=generation.model_size,
             status=generation.status or "completed",
+            worker_name=worker_name,
+            worker_status=worker_status,
             error=generation.error,
             is_favorited=bool(generation.is_favorited),
             created_at=generation.created_at,

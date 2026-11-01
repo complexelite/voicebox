@@ -151,6 +151,8 @@ class HistoryResponse(BaseModel):
     engine: Optional[str] = "qwen"
     model_size: Optional[str] = None
     status: str = "completed"
+    worker_name: Optional[str] = None
+    worker_status: Optional[str] = None
     error: Optional[str] = None
     is_favorited: bool = False
     created_at: datetime

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
-import { AlertCircle, CheckCircle2, Cpu, Loader2, RefreshCw, ShieldCheck, Trash2, WifiOff } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock3, Cpu, Loader2, RefreshCw, ShieldCheck, Trash2, WifiOff } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -11,6 +11,7 @@ import type { RemoteVoiceWorker } from '@/lib/api/types';
 import { useToast } from '@/components/ui/use-toast';
 
 const WORKERS_QUERY_KEY = ['remote-voice-workers'];
+const JOBS_QUERY_KEY = ['remote-voice-jobs'];
 
 function lastSeenLabel(value: string | null, neverLabel: string): string {
   if (!value) return neverLabel;
@@ -34,6 +35,34 @@ function modelLabel(model: { engine: string; model_size?: string | null }): stri
   };
   const name = engines[model.engine] ?? model.engine;
   return model.model_size ? `${name} ${model.model_size}` : name;
+}
+
+function jobTimeLabel(start: string | null, end: string | null, status: string): string {
+  if (!start) return 'Time unavailable';
+  const parse = (value: string) => new Date(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value) ? value : `${value}Z`).getTime();
+  const startMs = parse(start);
+  const endMs = end && !['queued', 'claimed', 'generating'].includes(status) ? parse(end) : Date.now();
+  const seconds = Math.max(0, Math.floor((endMs - startMs) / 1000));
+  if (!Number.isFinite(seconds)) return 'Time unavailable';
+  const duration = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  return ['queued', 'claimed', 'generating'].includes(status) ? `${duration} elapsed` : `Ran for ${duration}`;
+}
+
+function QueueStatus({ status }: { status: string }) {
+  const labels: Record<string, string> = {
+    queued: 'Queued · waiting for a compatible worker',
+    claimed: 'Claimed · worker preparing model',
+    generating: 'Generating on worker',
+    completed: 'Completed',
+    failed: 'Failed',
+    cpu_fallback: 'Running on VPS fallback',
+    cancelled: 'Cancelled',
+  };
+  const active = status === 'claimed' || status === 'generating';
+  return <Badge variant={status === 'failed' ? 'destructive' : 'secondary'} className="gap-1.5">
+    {active && <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />}
+    {labels[status] ?? status}
+  </Badge>;
 }
 
 function WorkerCard({ worker, onRevoke }: { worker: RemoteVoiceWorker; onRevoke: () => void }) {
@@ -89,6 +118,12 @@ function WorkerCard({ worker, onRevoke }: { worker: RemoteVoiceWorker; onRevoke:
               {lastSeenLabel(worker.lastSeenAt, t('settings.workers.never'))}
             </p>
           </div>
+          {worker.activeJob && (
+            <div className="rounded-lg border border-accent/30 bg-accent/5 px-3 py-2">
+              <p className="text-xs font-semibold text-accent">Generating on this worker</p>
+              <p className="mt-1 text-sm">{worker.activeJob.textPreview || 'Voice generation'}</p>
+            </div>
+          )}
         </div>
         {worker.enabled && (
           <Button variant="outline" size="sm" className="self-end text-destructive hover:text-destructive" onClick={onRevoke}>
@@ -110,6 +145,12 @@ export function WorkersPage() {
     queryKey: WORKERS_QUERY_KEY,
     queryFn: () => apiClient.listRemoteWorkers(),
     refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
+  });
+  const jobsQuery = useQuery({
+    queryKey: JOBS_QUERY_KEY,
+    queryFn: () => apiClient.listRemoteVoiceJobs(),
+    refetchInterval: 3000,
     refetchOnWindowFocus: true,
   });
   const revokeMutation = useMutation({
@@ -145,6 +186,49 @@ export function WorkersPage() {
         <p className="text-sm text-muted-foreground">{t('settings.workers.dispatchInfo')}</p>
         <Badge variant="secondary" className="ml-auto">{t('settings.workers.onlineCount', { count: onlineCount })}</Badge>
       </div>
+
+      <section aria-labelledby="worker-queue-heading" className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 id="worker-queue-heading" className="text-lg font-semibold">Generation queue</h2>
+            <p className="text-sm text-muted-foreground">Live queue and worker assignment · updates every 3 seconds</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(['queued', 'claimed', 'generating'] as const).map((state) => (
+              <Badge key={state} variant="outline">{state}: {jobsQuery.data?.counts[state] ?? 0}</Badge>
+            ))}
+          </div>
+        </div>
+        {jobsQuery.isPending ? (
+          <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading queue…</div>
+        ) : jobsQuery.error ? (
+          <div role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm text-destructive">Could not load the generation queue.</div>
+        ) : (jobsQuery.data?.jobs ?? []).length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border p-5 text-sm text-muted-foreground">No remote generations yet. A job appears here when a compatible online worker accepts it.</div>
+        ) : (
+          <div className="space-y-2">
+            {jobsQuery.data?.jobs.map((job) => (
+              <article key={job.id} className="rounded-xl border border-border/70 bg-card p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <QueueStatus status={job.status} />
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3.5 w-3.5" />{jobTimeLabel(job.createdAt, job.updatedAt, job.status)}</span>
+                </div>
+                <p className="mt-2 text-sm">{job.textPreview || 'Voice generation'}</p>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span>{job.workerName ? `Worker: ${job.workerName}` : job.status === 'queued' ? 'Worker: waiting for match' : 'Worker: VPS fallback'}</span>
+                  <span>{modelLabel({ engine: job.engine, model_size: job.modelSize })}</span>
+                  <span>Job {job.generationId.slice(0, 8)}</span>
+                </div>
+                {(job.status === 'claimed' || job.status === 'generating') && (
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted" aria-label="Generation is active; percentage is not available">
+                    <div className="h-full w-1/3 animate-pulse rounded-full bg-accent" />
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
       {workersQuery.isPending ? (
         <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{t('settings.workers.loading')}</div>

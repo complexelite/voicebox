@@ -551,6 +551,16 @@ export function HistoryTable() {
                           </span>
                         ) : null}
                       </div>
+                      {gen.worker_name && (isInProgress || gen.worker_status === 'completed') && (
+                        <div className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                          {gen.worker_status === 'completed'
+                            ? `Generated on ${gen.worker_name}`
+                            : `Running on ${gen.worker_name}`}
+                        </div>
+                      )}
+                      {isInProgress && !gen.worker_name && gen.worker_status === 'queued' && (
+                        <div className="text-xs font-medium text-amber-700 dark:text-amber-300">Queued for remote worker</div>
+                      )}
                       <div className="text-xs text-muted-foreground">
                         {isInProgress ? (
                           <span className="text-accent">

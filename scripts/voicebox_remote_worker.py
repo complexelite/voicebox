@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import platform
+import subprocess
 import tempfile
 import time
 from pathlib import Path
@@ -21,6 +22,37 @@ from pathlib import Path
 import httpx
 
 LOG = logging.getLogger("voicebox.remote_worker")
+
+
+def notify_desktop(title: str, message: str) -> None:
+    """Send a short local OS notification without including the private script."""
+    if os.environ.get("VOICEBOX_DESKTOP_NOTIFICATIONS", "1").lower() in {"0", "false", "no", "off"}:
+        return
+    try:
+        if platform.system() == "Darwin":
+            escaped_title = title.replace("\\", "\\\\").replace('"', '\\"')
+            escaped_message = message.replace("\\", "\\\\").replace('"', '\\"')
+            subprocess.run(
+                ["osascript", "-e", f'display notification "{escaped_message}" with title "{escaped_title}"'],
+                check=False, capture_output=True, timeout=5,
+            )
+        elif platform.system() == "Windows":
+            safe_title = title.replace("'", "''")
+            safe_message = message.replace("'", "''")
+            command = (
+                "[void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, "
+                "ContentType = WindowsRuntime]; "
+                "$xml = [Windows.Data.Xml.Dom.XmlDocument]::new(); "
+                f"$xml.LoadXml('<toast><visual><binding template=\"ToastGeneric\"><text>{safe_title}</text>"
+                f"<text>{safe_message}</text></binding></visual></toast>'); "
+                "$toast = [Windows.UI.Notifications.ToastNotification]::new($xml); "
+                "$notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Voicebox'); "
+                "$notifier.Show($toast)"
+            )
+            subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", command],
+                           check=False, capture_output=True, timeout=8)
+    except (OSError, subprocess.SubprocessError):
+        LOG.debug("Desktop notification unavailable", exc_info=True)
 
 
 class Worker:
@@ -163,6 +195,8 @@ class Worker:
         remote_profile = job.pop("profile")
         generation_id = job["generation_id"]
         self.active_job_id = job_id
+        LOG.info("Claimed generation %s", generation_id)
+        notify_desktop("Voicebox job received", "A voice generation was assigned to this computer.")
         local_generation_id = None
         try:
             self.heartbeat()
@@ -186,6 +220,8 @@ class Worker:
                 status = self._local("GET", f"/history/{local_generation_id}").json()
                 if status.get("status") in {"loading_model", "generating"} and status["status"] != reported_status:
                     reported_status = status["status"]
+                    if reported_status == "generating":
+                        notify_desktop("Voicebox is generating", "Your voice generation is now running on this computer.")
                     self.hub_client.post(
                         f"/worker/v1/jobs/{job_id}/status", json={"status": reported_status}
                     ).raise_for_status()
@@ -197,11 +233,13 @@ class Worker:
                     )
                     result.raise_for_status()
                     LOG.info("Completed central generation %s", generation_id)
+                    notify_desktop("Voicebox generation complete", "The finished audio is available in Voicebox history.")
                     break
                 if status.get("status") == "failed":
                     raise RuntimeError(status.get("error") or "Local Voicebox generation failed")
         except Exception as exc:
             LOG.exception("Generation %s failed on this worker", generation_id)
+            notify_desktop("Voicebox generation failed", "Open Voicebox history for the error details.")
             try:
                 self.hub_client.post(f"/worker/v1/jobs/{job_id}/fail", json={"status": "failed", "detail": str(exc)[:500]}).raise_for_status()
             except Exception:
