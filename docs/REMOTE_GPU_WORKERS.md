@@ -30,16 +30,23 @@ python3 scripts/install_voicebox_worker_macos.py
 
 The LaunchAgent starts an isolated headless Voicebox API on loopback port 17494, uses the existing Hugging Face model cache, and starts the polling agent at login. It writes mirrored voice profiles and generation artifacts under `~/Library/Application Support/Voicebox Remote Worker/data`; those do not mix into the interactive Voicebox history. Logs are under `~/Library/Application Support/Voicebox Remote Worker/`.
 
-## Windows or Linux worker
+## Windows NVIDIA worker
 
-Keep the Voicebox desktop/server backend running locally and bound to loopback (normally `http://127.0.0.1:17493`). Install Python 3.10+ and `httpx`, enroll the device, then start the agent:
+Install Voicebox for Windows on the Threadripper PC, open it once, and download the TTS model(s) you want that PC to serve. Confirm its local API is healthy at `http://127.0.0.1:17493/health`. Then run the installer from PowerShell as the Windows user who will keep the machine signed in (no Administrator shell is required):
 
-```sh
-python -m pip install httpx
-python scripts/voicebox_remote_worker.py --credential-file "$HOME/.config/voicebox/remote-worker.json" --local-api http://127.0.0.1:17493
+```powershell
+$installer = Join-Path $env:TEMP 'install-voicebox-worker.ps1'
+Invoke-WebRequest 'https://raw.githubusercontent.com/complexelite/voicebox/main/scripts/install_voicebox_worker_windows.ps1' -OutFile $installer
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer
 ```
 
-On Windows, use the credential file under `%USERPROFILE%\.config\voicebox\remote-worker.json` and run the same Python script from PowerShell with that path. For a permanent worker, register the command in Task Scheduler (Windows) or a user `systemd` service (Linux), configured to start after login/boot and restart on failure. Keep the Voicebox server API local-only; do not bind it to `0.0.0.0`.
+The installer checks the local Voicebox API/GPU, installs per-user Python 3.12 if needed, asks once for the Voicebox admin API key without saving it, and enrolls a dedicated worker credential. It stores the scoped credential under `%USERPROFILE%\.config\voicebox\remote-worker.json` with an ACL limited to that Windows user and SYSTEM. It registers a Task Scheduler job to reconnect at sign-in and restart if the process exits. Keep the desktop Voicebox backend available after sign-in; the worker retries if it takes time to start. The API must stay bound to `127.0.0.1`, never `0.0.0.0`.
+
+Check the worker in Voicebox's authenticated `GET /workers` endpoint. Its model list contains only downloaded/loaded local models. The RTX 2060 Super should report CUDA when the Voicebox Windows CUDA backend is installed; if it reports CPU, install/enable CUDA in Voicebox before expecting GPU acceleration.
+
+## Linux worker
+
+Keep the Voicebox server backend running locally and bound to loopback (normally `http://127.0.0.1:17493`). Install Python 3.12+ and `httpx`, enroll the device, then run `scripts/voicebox_remote_worker.py` with the credential file. For persistence, configure a user `systemd` service to start after login/boot and restart on failure.
 
 Install or download the model(s) you intend to use on each worker. First use may download missing model files into the local Voicebox model cache, so that initial generation can take longer. Engine availability differs by platform: Apple Silicon advertises engines available to its MLX backend; NVIDIA should use a CUDA-enabled local Voicebox installation. The agent advertises the local engine registry and the hub will only dispatch a matching engine.
 
