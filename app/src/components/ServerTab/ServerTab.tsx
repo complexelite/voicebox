@@ -14,6 +14,7 @@ interface SettingsTab {
     | '/settings/captures'
     | '/settings/mcp'
     | '/settings/gpu'
+    | '/settings/workers'
     | '/settings/logs'
     | '/settings/changelog'
     | '/settings/about';
@@ -26,6 +27,7 @@ const tabs: SettingsTab[] = [
   { labelKey: 'settings.tabs.captures', path: '/settings/captures' },
   { labelKey: 'settings.tabs.mcp', path: '/settings/mcp' },
   { labelKey: 'settings.tabs.gpu', path: '/settings/gpu', tauriOnly: true },
+  { labelKey: 'settings.tabs.workers', path: '/settings/workers' },
   { labelKey: 'settings.tabs.logs', path: '/settings/logs', tauriOnly: true },
   { labelKey: 'settings.tabs.changelog', path: '/settings/changelog' },
   { labelKey: 'settings.tabs.about', path: '/settings/about' },

@@ -790,6 +790,7 @@
       "captures": "Captures",
       "mcp": "MCP",
       "gpu": "GPU",
+      "workers": "Workers",
       "logs": "Logs",
       "changelog": "Changelog",
       "about": "About"
@@ -806,6 +807,30 @@
         "light": "Light",
         "dark": "Dark"
       }
+    },
+    "workers": {
+      "title": "Remote GPU workers",
+      "description": "See the private machines connected to this Voicebox hub, their available acceleration, and the models they can run.",
+      "refresh": "Refresh",
+      "dispatchInfo": "Voicebox sends a generation to an online worker only when its engine and model match. If none is available, the VPS queue remains the fallback.",
+      "onlineCount": "{{count}} online",
+      "online": "Online",
+      "offline": "Offline",
+      "unknownDevice": "Device details unavailable",
+      "models": "Available models",
+      "noModels": "No downloaded TTS models are currently advertised by this device.",
+      "lastHeartbeat": "Last heartbeat",
+      "never": "Never connected",
+      "loading": "Checking connected workers…",
+      "loadFailed": "Could not load workers",
+      "emptyTitle": "No remote workers enrolled",
+      "emptyDescription": "Enroll a Mac, Windows PC, or Linux machine from the remote GPU worker setup guide. Devices connect outbound; no home-network ports need to be opened.",
+      "revoke": "Revoke",
+      "revokeTitle": "Revoke {{name}}?",
+      "revokeDescriptionLong": "This disables the device credential immediately. Any active generation returns to the queue and may run on another compatible worker or the VPS.",
+      "revokedTitle": "Worker revoked",
+      "revokedDescription": "The device can no longer claim Voicebox jobs.",
+      "revokeFailed": "Could not revoke worker"
     },
     "general": {
       "docs": {

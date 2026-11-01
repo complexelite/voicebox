@@ -55,6 +55,7 @@ import type {
   MCPClientBindingUpsert,
   CloudLoginStartResponse,
   CloudStatus,
+  RemoteVoiceWorker,
 } from './types';
 
 function formatErrorDetail(detail: unknown, fallback: string): string {
@@ -101,6 +102,16 @@ class ApiClient {
   // Health
   async getHealth(): Promise<HealthResponse> {
     return this.request<HealthResponse>('/health');
+  }
+
+  async listRemoteWorkers(): Promise<RemoteVoiceWorker[]> {
+    return this.request<RemoteVoiceWorker[]>('/workers');
+  }
+
+  async revokeRemoteWorker(workerId: string): Promise<{ ok: boolean; revoked: string }> {
+    return this.request<{ ok: boolean; revoked: string }>(`/workers/${encodeURIComponent(workerId)}`, {
+      method: 'DELETE',
+    });
   }
 
   // Profiles

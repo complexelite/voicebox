@@ -273,6 +273,19 @@ export interface GenerationSettings {
 
 export type GenerationSettingsUpdate = Partial<GenerationSettings>;
 
+export interface RemoteVoiceWorker {
+  id: string;
+  name: string;
+  enabled: boolean;
+  online: boolean;
+  lastSeenAt: string | null;
+  capabilities: {
+    platform?: string;
+    gpu?: string;
+    models?: Array<{ engine: string; model_size?: string | null }>;
+  };
+}
+
 export interface TranscriptionRequest {
   language?: LanguageCode;
   model?: WhisperModelSize;

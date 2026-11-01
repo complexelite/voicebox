@@ -19,6 +19,7 @@ import { GpuPage } from '@/components/ServerTab/GpuPage';
 import { LogsPage } from '@/components/ServerTab/LogsPage';
 import { MCPPage } from '@/components/ServerTab/MCPPage';
 import { SettingsLayout } from '@/components/ServerTab/ServerTab';
+import { WorkersPage } from '@/components/ServerTab/WorkersPage';
 import { Sidebar } from '@/components/Sidebar';
 import { StoriesTab } from '@/components/StoriesTab/StoriesTab';
 import { Toaster } from '@/components/ui/toaster';
@@ -172,6 +173,12 @@ const settingsGpuRoute = createRoute({
   component: GpuPage,
 });
 
+const settingsWorkersRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: '/workers',
+  component: WorkersPage,
+});
+
 const settingsChangelogRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: '/changelog',
@@ -213,6 +220,7 @@ const routeTree = rootRoute.addChildren([
     settingsCapturesRoute,
     settingsMCPRoute,
     settingsGpuRoute,
+    settingsWorkersRoute,
     settingsLogsRoute,
     settingsChangelogRoute,
     settingsAboutRoute,
