@@ -34,7 +34,9 @@ def main() -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     definition = {
         "Label": "com.complexelite.voicebox-worker",
-        "ProgramArguments": ["/bin/bash", str(DEST)],
+        # Keep a plugged-in Mac awake so it remains available as an inference
+        # worker. macOS still sleeps the machine when it is running on battery.
+        "ProgramArguments": ["/usr/bin/caffeinate", "-s", "/bin/bash", str(DEST)],
         "RunAtLoad": True,
         "KeepAlive": True,
         "StandardOutPath": str(log_path),
