@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 BASE="$HOME/Library/Application Support/Voicebox Remote Worker"
 CONFIG="$HOME/.config/voicebox/remote-worker.json"
 AGENT="$BASE/voicebox_remote_worker.py"
@@ -9,6 +10,20 @@ SERVER="/Applications/Voicebox.app/Contents/MacOS/voicebox-server"
 PORT="17494"
 DATA="$BASE/data"
 LOG="$BASE/worker.log"
+
+PYTHON_BIN="${VOICEBOX_WORKER_PYTHON:-}"
+if [[ -z "$PYTHON_BIN" ]]; then
+  for candidate in /opt/homebrew/bin/python3.14 /opt/homebrew/bin/python3.13 /opt/homebrew/bin/python3.12 /opt/homebrew/bin/python3.11 /usr/local/bin/python3.14 /usr/local/bin/python3.13 /usr/local/bin/python3.12 /usr/bin/python3; do
+    if [[ -x "$candidate" ]] && "$candidate" -c 'import plistlib, venv' >/dev/null 2>&1; then
+      PYTHON_BIN="$candidate"
+      break
+    fi
+  done
+fi
+if [[ -z "$PYTHON_BIN" ]] || ! "$PYTHON_BIN" -c 'import plistlib, venv' >/dev/null 2>&1; then
+  echo "A working Python with venv and httpx is required. Install Python 3.12 or newer, then restart this worker." >&2
+  exit 1
+fi
 
 mkdir -p "$BASE" "$DATA" "$HOME/.config/voicebox"
 chmod 700 "$BASE" "$HOME/.config/voicebox"
@@ -21,7 +36,7 @@ if [[ ! -f "$CONFIG" ]]; then
   exit 1
 fi
 if [[ ! -x "$VENV/bin/python" ]]; then
-  python3 -m venv "$VENV"
+  "$PYTHON_BIN" -m venv "$VENV"
   "$VENV/bin/pip" install --upgrade httpx
 fi
 chmod 600 "$CONFIG"

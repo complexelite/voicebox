@@ -33,7 +33,11 @@ class Worker:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.map_file = state_dir / "profile-map.json"
         self.profile_map = self._load_map()
-        self.hub_client = httpx.Client(timeout=httpx.Timeout(120, connect=10), headers={"X-Voicebox-Worker-Token": token})
+        self.hub_client = httpx.Client(
+            base_url=self.hub,
+            timeout=httpx.Timeout(120, connect=10),
+            headers={"X-Voicebox-Worker-Token": token},
+        )
         self.local_client = httpx.Client(timeout=httpx.Timeout(120, connect=5))
         local_key = os.environ.get("VOICEBOX_LOCAL_API_KEY", "").strip()
         if local_key:
