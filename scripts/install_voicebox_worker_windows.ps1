@@ -2,7 +2,7 @@ param(
     [string]$HubUrl = "https://voicebox.complexelite.com",
     [string]$Name = '__VOICEBOX_WORKER_NAME__',
     [string]$EnrollmentTicket = '__VOICEBOX_ENROLLMENT_TICKET__',
-    [int]$LocalPort = 17493
+    [int]$LocalPort = 17600
 )
 
 $ErrorActionPreference = "Stop"
