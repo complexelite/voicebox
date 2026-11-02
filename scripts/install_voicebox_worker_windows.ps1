@@ -30,20 +30,57 @@ function Set-UserOnlyAcl([string]$Path, [bool]$Directory) {
     Set-Acl -LiteralPath $Path -AclObject $acl
 }
 
+function Test-PythonExecutable([string]$Executable, [string[]]$PrefixArgs = @()) {
+    if (-not $Executable -or $Executable -match "\\WindowsApps\\") { return $null }
+    try {
+        $probeArgs = $PrefixArgs + @('-c', "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}|{sys.executable}')")
+        $result = & $Executable @probeArgs 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $result) { return $null }
+        $parts = $result.Trim() -split '\|', 2
+        if ($parts.Count -ne 2) { return $null }
+        if ([version]$parts[0] -ge [version]'3.12') { return $parts[1] }
+    } catch {
+        return $null
+    }
+    return $null
+}
+
 function Find-Python {
-    $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
-    if ($launcher) {
-        foreach ($version in @("3.14", "3.13", "3.12")) {
-            & $launcher.Source "-$version" -c "import sys; raise SystemExit(0 if sys.version_info >= (3,12) else 1)" *> $null
-            if ($LASTEXITCODE -eq 0) {
-                return ((& $launcher.Source "-$version" -c "import sys; print(sys.executable)").Trim())
+    # Prefer actual interpreter paths so the Windows App Execution Alias stub
+    # cannot intercept Python discovery or emit a misleading py.exe error.
+    $versions = @('Python314', 'Python313', 'Python312')
+    $roots = @($env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ }
+    foreach ($root in $roots) {
+        foreach ($version in $versions) {
+            $candidate = Join-Path $root "Programs\Python\$version\python.exe"
+            if (Test-Path $candidate) {
+                $found = Test-PythonExecutable $candidate
+                if ($found) { return $found }
+            }
+            $candidate = Join-Path $root "$version\python.exe"
+            if (Test-Path $candidate) {
+                $found = Test-PythonExecutable $candidate
+                if ($found) { return $found }
             }
         }
     }
-    $pythonCommand = Get-Command python.exe -ErrorAction SilentlyContinue
-    if ($pythonCommand) {
-        & $pythonCommand.Source -c "import sys; raise SystemExit(0 if sys.version_info >= (3,12) else 1)" *> $null
-        if ($LASTEXITCODE -eq 0) { return $pythonCommand.Source }
+
+    # Some Python installations use the Python Launcher; ask for explicit
+    # supported runtimes and ignore unavailable versions quietly.
+    $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
+    if ($launcher -and $launcher.Source -notmatch "\\WindowsApps\\") {
+        foreach ($version in @('3.14', '3.13', '3.12')) {
+            $found = Test-PythonExecutable $launcher.Source @("-$version")
+            if ($found) { return $found }
+        }
+    }
+
+    foreach ($commandName in @('python3.14.exe', 'python3.13.exe', 'python3.12.exe', 'python.exe')) {
+        $command = Get-Command $commandName -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($command) {
+            $found = Test-PythonExecutable $command.Source
+            if ($found) { return $found }
+        }
     }
     return $null
 }
@@ -89,13 +126,13 @@ if (Test-Path $configPath) {
 $python = Find-Python
 if (-not $python) {
     $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
-    if (-not $winget) { throw "Python 3.12+ with pip is required. Install Python 3.12 or newer, then rerun this installer." }
+    if (-not $winget) { throw "Could not find Python 3.12+ or the Windows App Installer (winget). Install Python 3.12 or newer from python.org, then run this setup again." }
     Write-Host "Installing per-user Python 3.12..."
     & $winget.Source install --exact --id Python.Python.3.12 --scope user --silent --accept-package-agreements --accept-source-agreements
     if ($LASTEXITCODE -ne 0) { throw "Python installation failed. Install Python 3.12 from python.org and rerun." }
     $env:Path = "$env:LOCALAPPDATA\Programs\Python\Python312;$env:LOCALAPPDATA\Programs\Python\Python312\Scripts;$env:LOCALAPPDATA\Programs\Python\Launcher;$env:Path"
     $python = Find-Python
-    if (-not $python) { throw "Python installed, but the Python launcher could not find it. Open a new PowerShell window and rerun." }
+    if (-not $python) { throw "Python installation finished, but no Python 3.12+ interpreter was found. Restart Windows once, then run this setup again. If it still fails, install Python 3.12 from python.org and retry." }
 }
 
 if (-not (Test-Path $venvPython)) {
