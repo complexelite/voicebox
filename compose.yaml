@@ -1,6 +1,6 @@
 services:
   voicebox:
-    image: ghcr.io/complexelite/voicebox:0.6.10
+    image: ghcr.io/complexelite/voicebox:0.6.17
     build:
       context: .
       dockerfile: Dockerfile
@@ -13,6 +13,9 @@ services:
       VOICEBOX_API_KEY: ${VOICEBOX_API_KEY:?Set VOICEBOX_API_KEY in Dokploy secrets}
       VOICEBOX_REQUIRE_AUTH: "1"
       VOICEBOX_PUBLIC_ORIGIN: https://voicebox.complexelite.com
+      VOICEBOX_PERFEX_LOGIN_URL: ${VOICEBOX_PERFEX_LOGIN_URL:-https://clients.complexelite.com/studio/login}
+      VOICEBOX_PERFEX_EXCHANGE_URL: ${VOICEBOX_PERFEX_EXCHANGE_URL:-https://clients.complexelite.com/studio/sso/voicebox-exchange}
+      VOICEBOX_PERFEX_ADMIN_URL: ${VOICEBOX_PERFEX_ADMIN_URL:-https://clients.complexelite.com/admin}
       VOICEBOX_MODELS_DIR: /app/data/models
       HF_HUB_CACHE: /home/voicebox/.cache/huggingface
       NUMBA_CACHE_DIR: /tmp/numba_cache

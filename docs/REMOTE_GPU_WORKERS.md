@@ -2,6 +2,10 @@
 
 Voicebox can hand eligible TTS generations to trusted home machines without exposing a home machine to inbound Internet traffic. Workers poll `https://voicebox.complexelite.com` over HTTPS with an individually revocable credential. The hub remains the source of truth for task status, audio files, and history. The VPS CPU queue remains the automatic fallback when no compatible worker is online; a lost worker lease is retried and then returned to the VPS queue.
 
+## Browser sign-in
+
+The hosted Voicebox web app uses the existing Perfex staff session and a PKCE-bound, one-time SSO hand-off. Start at `https://voicebox.complexelite.com`; unauthenticated browser visits redirect through Perfex and return to Voicebox. Voicebox exchanges the one-time code server-to-server and issues an eight-hour, HTTP-only, secure browser session cookie. The Voicebox API key stays server-side for service integrations such as Studio and is not entered into the browser. No additional shared SSO secret needs to be configured.
+
 ## Security and data flow
 
 - A worker credential can only heartbeat, claim compatible jobs, report progress, upload a result, or report failure. It cannot access the general Voicebox API.

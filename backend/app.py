@@ -106,7 +106,7 @@ if not os.environ.get("MIOPEN_LOG_LEVEL"):
     os.environ["MIOPEN_LOG_LEVEL"] = "4"
 
 import torch
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -163,20 +163,40 @@ def create_app() -> FastAPI:
 
     # Voicebox is designed as a local-first application and the upstream
     # server deliberately has no authentication. This deployment can be
-    # internet-facing, so require the Studio-managed key at the HTTP boundary.
-    # The browser uses HTTP Basic (native browser credential prompt); Studio's
-    # private server-to-server adapter uses Bearer. No browser storage token.
+    # internet-facing, so require the Studio-managed key for service-to-service
+    # clients and a Perfex one-time SSO session for interactive browser users.
     api_key = os.environ.get("VOICEBOX_API_KEY", "").strip()
     require_auth = os.environ.get("VOICEBOX_REQUIRE_AUTH", "").strip().lower() in {"1", "true", "yes", "on"}
     public_origin = os.environ.get("VOICEBOX_PUBLIC_ORIGIN", "https://voicebox.complexelite.com").rstrip("/")
+    from .services import perfex_sso
+
     if require_auth and len(api_key) < 32:
         raise RuntimeError("VOICEBOX_API_KEY must contain at least 32 characters when VOICEBOX_REQUIRE_AUTH is enabled")
     failed_auth: dict[str, list[float]] = {}
 
     @application.middleware("http")
     async def protect_remote_access(request, call_next):
-        if not api_key:
+        if request.url.path in {"/auth/start", "/auth/perfex", "/auth/logout"}:
             return await call_next(request)
+
+        if not api_key:
+            # Preserve Voicebox's local-first desktop/dev mode. Only an
+            # internet-facing deployment that explicitly requires auth is
+            # redirected into Perfex SSO.
+            if not require_auth:
+                return await call_next(request)
+            if perfex_sso.session_user(request):
+                return await call_next(request)
+            if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
+                if perfex_sso.configured():
+                    from starlette.responses import RedirectResponse
+
+                    state, verifier, _challenge, destination = perfex_sso.begin_login()
+                    response = RedirectResponse(destination, status_code=303, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+                    response.set_cookie(perfex_sso.STATE_COOKIE, f"{state}.{verifier}", max_age=perfex_sso.STATE_SECONDS, httponly=True, secure=True, samesite="lax", path="/")
+                    return response
+                return JSONResponse({"detail": "Perfex sign-in is not configured for Voicebox."}, status_code=503)
+            return JSONResponse({"detail": "Authentication required. Sign in through Perfex."}, status_code=401)
 
         # Docker's own health probe is the only unauthenticated exception.
         peer = request.client.host if request.client else ""
@@ -188,12 +208,13 @@ def create_app() -> FastAPI:
         if request.url.path.startswith("/worker/v1/") and request.headers.get("x-voicebox-worker-token"):
             return await call_next(request)
 
+        session_user = perfex_sso.session_user(request)
         authorization = request.headers.get("authorization", "")
-        authenticated = False
+        authenticated = session_user is not None
         scheme, _, credential = authorization.partition(" ")
-        if scheme.lower() == "bearer":
+        if not authenticated and scheme.lower() == "bearer":
             authenticated = hmac.compare_digest(credential.strip(), api_key)
-        elif scheme.lower() == "basic":
+        elif not authenticated and scheme.lower() == "basic":
             try:
                 decoded = base64.b64decode(credential.strip(), validate=True).decode("utf-8")
                 username, separator, password = decoded.partition(":")
@@ -201,6 +222,19 @@ def create_app() -> FastAPI:
             except (ValueError, UnicodeDecodeError):
                 authenticated = False
         if not authenticated:
+            accept = request.headers.get("accept", "")
+            if request.method == "GET" and "text/html" in accept:
+                if not perfex_sso.configured():
+                    return JSONResponse({"detail": "Perfex sign-in is not configured for Voicebox."}, status_code=503)
+                from starlette.responses import RedirectResponse
+
+                state, verifier, _challenge, destination = perfex_sso.begin_login()
+                response = RedirectResponse(destination, status_code=303, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+                response.set_cookie(
+                    perfex_sso.STATE_COOKIE, f"{state}.{verifier}", max_age=perfex_sso.STATE_SECONDS,
+                    httponly=True, secure=True, samesite="lax", path="/",
+                )
+                return response
             now = time.monotonic()
             attempts = [stamp for stamp in failed_auth.get(peer, []) if now - stamp < 300]
             if len(attempts) >= 10:
@@ -213,13 +247,12 @@ def create_app() -> FastAPI:
                     if not failed_auth[address] or now - failed_auth[address][-1] >= 300:
                         failed_auth.pop(address, None)
             return JSONResponse(
-                {"detail": "Authentication required."},
+                {"detail": "Authentication required. Sign in through Perfex."},
                 status_code=401,
-                headers={"WWW-Authenticate": 'Basic realm="Voicebox", charset="UTF-8"'},
             )
 
-        # Reject cross-origin state changes to protect browser-cached Basic
-        # credentials from CSRF. Native clients without Origin remain usable.
+        # Reject cross-origin state changes to protect browser sessions from
+        # CSRF. Native server integrations without Origin remain usable.
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             origin = request.headers.get("origin")
             fetch_site = request.headers.get("sec-fetch-site", "").lower()
@@ -228,6 +261,45 @@ def create_app() -> FastAPI:
             if not origin and fetch_site not in {"", "none"}:
                 return JSONResponse({"detail": "Cross-origin request rejected."}, status_code=403)
         return await call_next(request)
+
+    from starlette.responses import RedirectResponse
+
+    @application.get("/auth/start")
+    async def start_perfex_sign_in():
+        if not perfex_sso.configured():
+            return JSONResponse({"detail": "Perfex sign-in is not configured for Voicebox."}, status_code=503)
+        state, verifier, _challenge, destination = perfex_sso.begin_login()
+        response = RedirectResponse(destination, status_code=303, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+        response.set_cookie(perfex_sso.STATE_COOKIE, f"{state}.{verifier}", max_age=perfex_sso.STATE_SECONDS, httponly=True, secure=True, samesite="lax", path="/")
+        return response
+
+    @application.get("/auth/perfex")
+    async def complete_perfex_sign_in(request: Request, code: str = "", state: str = ""):
+        import re
+
+        state_cookie = request.cookies.get(perfex_sso.STATE_COOKIE, "")
+        expected_state, separator, verifier = state_cookie.partition(".")
+        if (not re.fullmatch(r"[a-f0-9]{64}", code) or not re.fullmatch(r"[a-f0-9]{64}", state)
+                or not separator or not re.fullmatch(r"[A-Za-z0-9_-]{40,80}", verifier)
+                or not hmac.compare_digest(state, expected_state)):
+            return JSONResponse({"detail": "This Voicebox sign-in link is invalid or expired. Start again from Perfex."}, status_code=400, headers={"Cache-Control": "no-store"})
+        try:
+            user = await perfex_sso.exchange_code(code, verifier)
+            session = perfex_sso.issue_session(user)
+        except Exception as exc:
+            logger.warning("Perfex SSO exchange failed: %s", str(exc)[:180])
+            return JSONResponse({"detail": str(exc)[:240]}, status_code=401, headers={"Cache-Control": "no-store"})
+        response = RedirectResponse("/", status_code=303, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+        response.set_cookie(perfex_sso.SESSION_COOKIE, session, max_age=perfex_sso.SESSION_SECONDS, httponly=True, secure=True, samesite="lax", path="/")
+        response.delete_cookie(perfex_sso.STATE_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+        return response
+
+    @application.get("/auth/logout")
+    async def logout_perfex_session():
+        response = RedirectResponse(os.environ.get("VOICEBOX_PERFEX_ADMIN_URL", "https://clients.complexelite.com/admin"), status_code=303, headers={"Cache-Control": "no-store"})
+        response.delete_cookie(perfex_sso.SESSION_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+        response.delete_cookie(perfex_sso.STATE_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+        return response
 
     register_routers(application)
     application.mount("/mcp", mcp_app)
