@@ -15,6 +15,7 @@ from .models import (
     GenerationVersion,
     ProfileChannelMapping,
     RemoteVoiceJob,
+    RemoteWorkerEnrollmentTicket,
     RemoteVoiceWorker,
     VoiceProfile,
 )

@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
-import { AlertCircle, CheckCircle2, Clock3, Cpu, Loader2, RefreshCw, ShieldCheck, Trash2, WifiOff } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock3, Cpu, Download, Loader2, RefreshCw, ShieldCheck, Trash2, WifiOff } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api/client';
 import type { RemoteVoiceWorker } from '@/lib/api/types';
 import { useToast } from '@/components/ui/use-toast';
@@ -141,6 +142,8 @@ export function WorkersPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [selectedWorker, setSelectedWorker] = useState<RemoteVoiceWorker | null>(null);
+  const [workerName, setWorkerName] = useState('Windows GPU worker');
+  const [downloadingSetup, setDownloadingSetup] = useState(false);
   const workersQuery = useQuery({
     queryKey: WORKERS_QUERY_KEY,
     queryFn: () => apiClient.listRemoteWorkers(),
@@ -168,6 +171,26 @@ export function WorkersPage() {
   const workers = workersQuery.data ?? [];
   const onlineCount = workers.filter((worker) => worker.online && worker.enabled).length;
 
+  const downloadWindowsSetup = async () => {
+    setDownloadingSetup(true);
+    try {
+      const archive = await apiClient.downloadWindowsWorkerSetup(workerName.trim());
+      const url = URL.createObjectURL(archive);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'voicebox-windows-worker.zip';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      toast({ title: t('settings.workers.setupDownloadedTitle'), description: t('settings.workers.setupDownloadedDescription') });
+    } catch (error) {
+      toast({ title: t('settings.workers.setupDownloadFailed'), description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+    } finally {
+      setDownloadingSetup(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
@@ -186,6 +209,28 @@ export function WorkersPage() {
         <p className="text-sm text-muted-foreground">{t('settings.workers.dispatchInfo')}</p>
         <Badge variant="secondary" className="ml-auto">{t('settings.workers.onlineCount', { count: onlineCount })}</Badge>
       </div>
+
+      <section aria-labelledby="windows-worker-setup-heading" className="space-y-3 rounded-xl border border-border/70 bg-card p-5">
+        <div>
+          <h2 id="windows-worker-setup-heading" className="text-lg font-semibold">{t('settings.workers.windowsSetupTitle')}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t('settings.workers.windowsSetupDescription')}</p>
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Input
+            aria-label={t('settings.workers.deviceName')}
+            value={workerName}
+            onChange={(event) => setWorkerName(event.target.value)}
+            maxLength={80}
+            placeholder={t('settings.workers.deviceNamePlaceholder')}
+            disabled={downloadingSetup}
+          />
+          <Button onClick={() => void downloadWindowsSetup()} disabled={downloadingSetup || !workerName.trim()} className="shrink-0">
+            {downloadingSetup ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Download aria-hidden="true" />}
+            {t('settings.workers.downloadWindowsSetup')}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">{t('settings.workers.windowsSetupSteps')}</p>
+      </section>
 
       <section aria-labelledby="worker-queue-heading" className="space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-2">

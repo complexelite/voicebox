@@ -155,6 +155,20 @@ class RemoteVoiceWorker(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
+class RemoteWorkerEnrollmentTicket(Base):
+    """Short-lived, single-use ticket issued from an authenticated browser."""
+
+    __tablename__ = "remote_worker_enrollment_tickets"
+
+    id = Column(String, primary_key=True)
+    token_hash = Column(String, nullable=False, unique=True, index=True)
+    worker_name = Column(String, nullable=False)
+    requested_by = Column(String, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    consumed_at = Column(DateTime, nullable=True)
+
+
 class RemoteVoiceJob(Base):
     """Durable lease record for one generation executed by a remote worker."""
 

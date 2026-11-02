@@ -1,6 +1,7 @@
 param(
     [string]$HubUrl = "https://voicebox.complexelite.com",
-    [string]$Name = "Threadripper RTX 2060 Super",
+    [string]$Name = '__VOICEBOX_WORKER_NAME__',
+    [string]$EnrollmentTicket = '__VOICEBOX_ENROLLMENT_TICKET__',
     [int]$LocalPort = 17493
 )
 
@@ -61,6 +62,30 @@ if ($health.status -ne "healthy") { throw "The local Voicebox server did not rep
 Write-Host "Local Voicebox: healthy; GPU=$($health.gpu_type); backend=$($health.backend_type)"
 if (-not $health.gpu_available) { Write-Warning "Voicebox does not currently report a usable GPU. Install/enable the CUDA backend in Voicebox before expecting RTX acceleration." }
 
+if (Test-Path $configPath) {
+    $existing = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+    if ($existing.hub_url -ne $HubUrl.TrimEnd('/')) { throw "An existing worker credential is registered to a different Voicebox hub. Revoke it before enrolling this PC to another hub." }
+    Write-Host "Reusing this PC's existing scoped worker credential."
+} else {
+    if (-not $EnrollmentTicket -or $EnrollmentTicket -like '__VOICEBOX_*__') {
+        throw "This installer has no enrollment ticket. Download a fresh Windows worker installer from Voicebox Settings > Workers."
+    }
+    try {
+        $enrollment = Invoke-RestMethod -Method Post -Uri ($HubUrl.TrimEnd('/') + "/workers/enroll-ticket") `
+            -ContentType "application/json" -Body (@{ ticket = $EnrollmentTicket } | ConvertTo-Json -Compress) -TimeoutSec 30
+        $EnrollmentTicket = $null
+    } catch {
+        throw "Worker enrollment failed. The setup ticket may have expired or already been used. Download a fresh installer from Voicebox Settings > Workers."
+    }
+
+    $credential = @{
+        hub_url = $HubUrl.TrimEnd('/'); name = $Name; worker_id = $enrollment.id; token = $enrollment.token
+    } | ConvertTo-Json
+    Set-Content -LiteralPath $configPath -Value $credential -Encoding UTF8
+    Set-UserOnlyAcl $configPath $false
+    Write-Host "This PC enrolled with a device-scoped credential. The credential file is restricted to your Windows user and SYSTEM."
+}
+
 $python = Find-Python
 if (-not $python) {
     $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
@@ -82,31 +107,6 @@ if ($LASTEXITCODE -ne 0) { throw "Could not install the worker's HTTP client." }
 
 $agentUri = "https://raw.githubusercontent.com/complexelite/voicebox/main/scripts/voicebox_remote_worker.py"
 Invoke-WebRequest -Uri $agentUri -OutFile $agentPath
-
-if (Test-Path $configPath) {
-    $existing = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-    if ($existing.hub_url -ne $HubUrl.TrimEnd('/')) { throw "An existing worker credential is registered to a different Voicebox hub. Revoke it before enrolling this PC to another hub." }
-    Write-Host "Reusing this PC's existing scoped worker credential."
-} else {
-    $secureKey = Read-Host "Voicebox admin API key (used only to enroll this PC; it will not be saved)" -AsSecureString
-    $keyPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
-    try { $apiKey = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($keyPointer) }
-    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($keyPointer) }
-    if ($apiKey.Length -lt 32) { throw "The API key is invalid or too short." }
-    try {
-        $enrollment = Invoke-RestMethod -Method Post -Uri ($HubUrl.TrimEnd('/') + "/workers/enroll") `
-            -Headers @{ Authorization = "Bearer $apiKey" } -ContentType "application/json" `
-            -Body (@{ name = $Name } | ConvertTo-Json -Compress) -TimeoutSec 30
-    } catch { throw "Worker enrollment failed. Check the Voicebox admin API key and hub URL; the key was not saved." }
-    finally { $apiKey = $null; $secureKey.Dispose() }
-
-    $credential = @{
-        hub_url = $HubUrl.TrimEnd('/'); name = $Name; worker_id = $enrollment.id; token = $enrollment.token
-    } | ConvertTo-Json
-    Set-Content -LiteralPath $configPath -Value $credential -Encoding UTF8
-    Set-UserOnlyAcl $configPath $false
-    Write-Host "This PC enrolled with a device-scoped credential. The credential file is restricted to your Windows user and SYSTEM."
-}
 
 $quotedPython = '"' + $venvPython + '"'
 $quotedAgent = '"' + $agentPath + '"'

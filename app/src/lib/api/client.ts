@@ -109,6 +109,20 @@ class ApiClient {
     return this.request<RemoteVoiceWorker[]>('/workers');
   }
 
+  async downloadWindowsWorkerSetup(name: string): Promise<Blob> {
+    const response = await fetch(`${this.getBaseUrl()}/workers/setup/windows`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/zip' },
+      body: JSON.stringify({ name }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(formatErrorDetail(error.detail, `HTTP error! status: ${response.status}`));
+    }
+    return response.blob();
+  }
+
   async listRemoteVoiceJobs(): Promise<RemoteVoiceJobsResponse> {
     return this.request<RemoteVoiceJobsResponse>('/workers/jobs');
   }

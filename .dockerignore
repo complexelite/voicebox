@@ -9,6 +9,7 @@ docs/
 mlx-test/
 scripts/*
 !scripts/rocm-entrypoint.sh
+!scripts/install_voicebox_worker_windows.ps1
 
 # Dependencies & build artifacts (rebuilt in Docker)
 node_modules/

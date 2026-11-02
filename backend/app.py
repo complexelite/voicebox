@@ -179,6 +179,11 @@ def create_app() -> FastAPI:
         if request.url.path in {"/auth/start", "/auth/perfex", "/auth/logout"}:
             return await call_next(request)
 
+        # The installer endpoint accepts only an expiring, single-use ticket
+        # embedded in a bundle issued to an authenticated Perfex session.
+        if request.url.path == "/workers/enroll-ticket" and request.method == "POST":
+            return await call_next(request)
+
         if not api_key:
             # Preserve Voicebox's local-first desktop/dev mode. Only an
             # internet-facing deployment that explicitly requires auth is

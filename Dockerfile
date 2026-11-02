@@ -114,6 +114,7 @@ COPY --from=denoland/deno:bin-2.9.8 /deno /usr/local/bin/deno
 
 # Copy backend application code
 COPY --chown=voicebox:voicebox backend/ /app/backend/
+COPY --chown=voicebox:voicebox scripts/install_voicebox_worker_windows.ps1 /app/backend/install_voicebox_worker_windows.ps1
 
 # Copy built frontend from frontend stage
 COPY --from=frontend --chown=voicebox:voicebox /build/web/dist /app/frontend/

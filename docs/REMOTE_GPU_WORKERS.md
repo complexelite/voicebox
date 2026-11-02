@@ -36,15 +36,9 @@ The LaunchAgent starts an isolated headless Voicebox API on loopback port 17494,
 
 ## Windows NVIDIA worker
 
-Install Voicebox for Windows on the Threadripper PC, open it once, and download the TTS model(s) you want that PC to serve. Confirm its local API is healthy at `http://127.0.0.1:17493/health`. Then run the installer from PowerShell as the Windows user who will keep the machine signed in (no Administrator shell is required):
+Sign in to Voicebox on the Windows PC, open **Settings → Workers**, enter a device name, and download the Windows worker setup ZIP. Extract it, make sure Voicebox is open with the local backend running, then double-click `Install-Voicebox-Worker.cmd`. No Voicebox username, password, admin API key, Administrator shell, or manual PowerShell command is needed. The short-lived setup ticket is bound to one worker and expires after 30 minutes. If it expires before use, download a fresh ZIP.
 
-```powershell
-$installer = Join-Path $env:TEMP 'install-voicebox-worker.ps1'
-Invoke-WebRequest 'https://raw.githubusercontent.com/complexelite/voicebox/main/scripts/install_voicebox_worker_windows.ps1' -OutFile $installer
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer
-```
-
-The installer checks the local Voicebox API/GPU, installs per-user Python 3.12 if needed, asks once for the Voicebox admin API key without saving it, and enrolls a dedicated worker credential. It stores the scoped credential under `%USERPROFILE%\.config\voicebox\remote-worker.json` with an ACL limited to that Windows user and SYSTEM. It registers a Task Scheduler job to reconnect at sign-in and restart if the process exits. Keep the desktop Voicebox backend available after sign-in; the worker retries if it takes time to start. The API must stay bound to `127.0.0.1`, never `0.0.0.0`.
+The installer checks the local Voicebox API/GPU, installs per-user Python 3.12 if needed, and enrolls a dedicated worker credential. It stores the scoped credential under `%USERPROFILE%\.config\voicebox\remote-worker.json` with an ACL limited to that Windows user and SYSTEM. It registers a Task Scheduler job to reconnect at sign-in and restart if the process exits. Keep the desktop Voicebox backend available after sign-in; the worker retries if it takes time to start. The API must stay bound to `127.0.0.1`, never `0.0.0.0`.
 
 Check the worker in Voicebox's authenticated `GET /workers` endpoint. Its model list contains only downloaded/loaded local models. The RTX 2060 Super should report CUDA when the Voicebox Windows CUDA backend is installed; if it reports CPU, install/enable CUDA in Voicebox before expecting GPU acceleration. Windows worker notifications use native Windows toast notifications while the worker runs in the signed-in user's session.
 
@@ -68,7 +62,7 @@ Revoke a lost or retired machine with:
 DELETE https://voicebox.complexelite.com/workers/{worker_id}
 ```
 
-Both management endpoints require the normal Voicebox admin API key. Revocation invalidates the device token and returns its active job to the queue. Do not send admin keys to worker devices.
+Worker listing and revocation require authenticated Voicebox access through Perfex or the server API key. Revocation invalidates the device token and returns its active job to the queue. Do not send admin keys to worker devices.
 
 ## Operational behavior
 

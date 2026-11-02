@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import secrets
 import uuid
+import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import and_, update
 from sqlalchemy.orm import Session
 
 from .. import config
@@ -23,6 +26,7 @@ from ..database import (
     Generation as DBGeneration,
     ProfileSample as DBProfileSample,
     RemoteVoiceJob,
+    RemoteWorkerEnrollmentTicket,
     RemoteVoiceWorker,
     VoiceProfile as DBVoiceProfile,
     get_db,
@@ -38,6 +42,10 @@ MAX_RESULT_BYTES = 120 * 1024 * 1024
 
 class EnrollRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
+
+
+class EnrollmentTicketRequest(BaseModel):
+    ticket: str = Field(min_length=40, max_length=100)
 
 
 class HeartbeatRequest(BaseModel):
@@ -207,6 +215,108 @@ async def enroll_worker(data: EnrollRequest, db: Session = Depends(get_db)):
     db.add(worker)
     db.commit()
     db.refresh(worker)
+    return {"id": worker.id, "name": worker.name, "token": token, "tokenShownOnce": True}
+
+
+@router.post("/workers/setup/windows")
+async def download_windows_worker_setup(data: EnrollRequest, request: Request, db: Session = Depends(get_db)):
+    """Issue a one-use enrollment ticket and return a double-click Windows installer bundle."""
+    from ..services import perfex_sso
+
+    user = perfex_sso.session_user(request)
+    if user is None:
+        raise HTTPException(status_code=403, detail="Sign in through Perfex before downloading a worker installer")
+    name = " ".join(data.name.split())
+    if not name:
+        raise HTTPException(status_code=400, detail="Worker name is required")
+    script_path = Path(__file__).resolve().parents[1] / "install_voicebox_worker_windows.ps1"
+    if not script_path.is_file():
+        raise HTTPException(status_code=503, detail="The Windows worker installer is not available on this Voicebox build")
+    now = _now()
+    db.query(RemoteWorkerEnrollmentTicket).filter(
+        RemoteWorkerEnrollmentTicket.expires_at <= now
+    ).delete(synchronize_session=False)
+    ticket = secrets.token_urlsafe(36)
+    db.add(RemoteWorkerEnrollmentTicket(
+        id=str(uuid.uuid4()), token_hash=_hash_token(ticket), worker_name=name,
+        requested_by=str(user["sub"]), created_at=now, expires_at=now + timedelta(minutes=30),
+    ))
+    db.commit()
+
+    script = script_path.read_text(encoding="utf-8")
+    # Both fields are inserted as PowerShell single-quoted literals; escape quotes
+    # so user-provided device names remain inert inside the script.
+    safe_ticket = ticket.replace("'", "''")
+    safe_name = name.replace("'", "''")
+    script = script.replace("'__VOICEBOX_ENROLLMENT_TICKET__'", f"'{safe_ticket}'")
+    script = script.replace("'__VOICEBOX_WORKER_NAME__'", f"'{safe_name}'")
+    if "__VOICEBOX_ENROLLMENT_TICKET__" in script or "__VOICEBOX_WORKER_NAME__" in script:
+        raise HTTPException(status_code=503, detail="The Windows worker installer template is invalid")
+    launcher = r'''@echo off
+setlocal
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install-Voicebox-Worker.ps1"
+if errorlevel 1 (
+  echo.
+  echo Setup did not complete. Read the message above, fix the issue, then run this file again.
+  pause
+  exit /b 1
+)
+echo.
+echo Voicebox worker setup finished. You can close this window.
+pause
+'''
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        bundle.writestr("Install-Voicebox-Worker.ps1", script)
+        bundle.writestr("Install-Voicebox-Worker.cmd", launcher)
+        bundle.writestr("README.txt", (
+            "Voicebox Windows remote GPU worker\r\n\r\n"
+            "1. Extract this ZIP on the Windows PC that has Voicebox installed.\r\n"
+            "2. Open Voicebox and ensure its local backend is running.\r\n"
+            "3. Double-click Install-Voicebox-Worker.cmd and accept the Windows script prompt if shown.\r\n"
+            "4. Leave the Windows account signed in; the worker starts at sign-in.\r\n\r\n"
+            "This setup ticket expires in 30 minutes and can enroll one worker once. Download a fresh installer if it expires.\r\n"
+            "The installer never asks for your Voicebox admin key.\r\n"
+        ))
+    return Response(
+        archive.getvalue(), media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="voicebox-windows-worker.zip"',
+            "Cache-Control": "no-store, private",
+            "Pragma": "no-cache",
+            "Referrer-Policy": "no-referrer",
+        },
+    )
+
+
+@router.post("/workers/enroll-ticket")
+async def enroll_worker_with_ticket(
+    data: EnrollmentTicketRequest, response: Response, db: Session = Depends(get_db)
+):
+    """Redeem a ticket from the authenticated Windows setup download exactly once."""
+    now = _now()
+    row = db.query(RemoteWorkerEnrollmentTicket).filter_by(token_hash=_hash_token(data.ticket)).first()
+    if row is None or row.consumed_at is not None or row.expires_at <= now:
+        raise HTTPException(status_code=401, detail="The setup ticket expired or was already used. Download a fresh installer from Voicebox Settings > Workers.")
+
+    consumed = db.execute(update(RemoteWorkerEnrollmentTicket).where(and_(
+        RemoteWorkerEnrollmentTicket.id == row.id,
+        RemoteWorkerEnrollmentTicket.consumed_at.is_(None),
+        RemoteWorkerEnrollmentTicket.expires_at > now,
+    )).values(consumed_at=now))
+    if consumed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=401, detail="The setup ticket expired or was already used. Download a fresh installer from Voicebox Settings > Workers.")
+
+    token = secrets.token_urlsafe(48)
+    worker = RemoteVoiceWorker(
+        id=str(uuid.uuid4()), name=row.worker_name, token_hash=_hash_token(token),
+        capabilities={"models": []}, enabled=True,
+    )
+    db.add(worker)
+    db.commit()
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["Pragma"] = "no-cache"
     return {"id": worker.id, "name": worker.name, "token": token, "tokenShownOnce": True}
 
 
