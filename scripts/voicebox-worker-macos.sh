@@ -7,6 +7,7 @@ CONFIG="$HOME/.config/voicebox/remote-worker.json"
 AGENT="$BASE/voicebox_remote_worker.py"
 VENV="$BASE/venv"
 SERVER="/Applications/Voicebox.app/Contents/MacOS/voicebox-server"
+EXPAT_RESOURCES="/Applications/Voicebox.app/Contents/Resources"
 PORT="17494"
 DATA="$BASE/data"
 LOG="$BASE/worker.log"
@@ -30,6 +31,9 @@ chmod 700 "$BASE" "$HOME/.config/voicebox"
 if [[ ! -x "$SERVER" ]]; then
   echo "Voicebox.app server not found at $SERVER" >&2
   exit 1
+fi
+if [[ -f "$EXPAT_RESOURCES/libexpat.1.dylib" ]]; then
+  export DYLD_LIBRARY_PATH="$EXPAT_RESOURCES${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
 fi
 if [[ ! -f "$CONFIG" ]]; then
   echo "Enroll this device first; credentials are missing at $CONFIG" >&2

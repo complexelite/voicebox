@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Voicebox",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "identifier": "sh.voicebox.app",
   "build": {
     "beforeDevCommand": "bun run dev",
@@ -30,7 +30,8 @@
     "resources": {
       "gen/Assets.car": "./",
       "gen/voicebox.icns": "./",
-      "gen/partial.plist": "./"
+      "gen/partial.plist": "./",
+      "resources/libexpat.1.dylib": "./"
     }
   },
   "app": {

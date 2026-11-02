@@ -501,6 +501,13 @@ async fn start_server(
         }
     };
 
+    #[cfg(target_os = "macos")]
+    let expat_resource_dir = app
+        .path()
+        .resource_dir()
+        .ok()
+        .filter(|dir| dir.join("libexpat.1.dylib").is_file());
+
     let sidecar_result = app.shell().sidecar("voicebox-server");
 
     let mut sidecar = match sidecar_result {
@@ -536,6 +543,11 @@ async fn start_server(
             return Err(format!("Failed to start server. In dev mode, run 'bun run dev:server' in a separate terminal."));
         }
     };
+
+    #[cfg(target_os = "macos")]
+    if let Some(ref dir) = expat_resource_dir {
+        sidecar = sidecar.env("DYLD_LIBRARY_PATH", dir.to_string_lossy().to_string());
+    }
 
     println!("Sidecar command created successfully");
 
@@ -584,6 +596,10 @@ async fn start_server(
             println!("Launching ROCm backend: {:?} (cwd: {:?})", rocm_path, rocm_dir);
             let mut cmd = app.shell().command(rocm_path.to_str().unwrap());
             cmd = cmd.current_dir(rocm_dir);
+            #[cfg(target_os = "macos")]
+            if let Some(ref dir) = expat_resource_dir {
+                cmd = cmd.env("DYLD_LIBRARY_PATH", dir.to_string_lossy().to_string());
+            }
             cmd = cmd.args(["--data-dir", &data_dir_str, "--port", &port_str, "--parent-pid", &parent_pid_str]);
             if is_remote { cmd = cmd.args(["--host", "0.0.0.0"]); }
             if let Some(ref dir) = effective_models_dir { cmd = cmd.env("VOICEBOX_MODELS_DIR", dir); }
@@ -599,6 +615,10 @@ async fn start_server(
                 println!("Launching CUDA backend: {:?} (cwd: {:?})", cuda_path, cuda_dir);
                 let mut cmd = app.shell().command(cuda_path.to_str().unwrap());
                 cmd = cmd.current_dir(cuda_dir);
+                #[cfg(target_os = "macos")]
+                if let Some(ref dir) = expat_resource_dir {
+                    cmd = cmd.env("DYLD_LIBRARY_PATH", dir.to_string_lossy().to_string());
+                }
                 cmd = cmd.args(["--data-dir", &data_dir_str, "--port", &port_str, "--parent-pid", &parent_pid_str]);
                 if is_remote { cmd = cmd.args(["--host", "0.0.0.0"]); }
                 if let Some(ref dir) = effective_models_dir { cmd = cmd.env("VOICEBOX_MODELS_DIR", dir); }
