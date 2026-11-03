@@ -456,6 +456,8 @@ async def claim_job(
         gen = db.query(DBGeneration).filter_by(id=job.generation_id).first()
         if gen and gen.status in ("generating", "loading_model"):
             gen.status = "loading_model"
+            gen.generation_started_at = now
+            gen.generation_time = None
             db.commit()
             return {"job": {"id": job.id, **_serialize_job(job, db)}}
         job.status = "cancelled"
@@ -536,6 +538,10 @@ async def complete_job(
         await history.update_generation_status(
             generation_id=gen.id, status="completed", db=db,
             audio_path=audio_path, duration=duration,
+            generation_time=(
+                max(0.0, (_now() - gen.generation_started_at.replace(tzinfo=UTC)).total_seconds())
+                if gen.generation_started_at else None
+            ),
         )
         job.status = "completed"
         job.lease_until = None

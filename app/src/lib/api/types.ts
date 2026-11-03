@@ -108,6 +108,7 @@ export interface GenerationResponse {
   language: string;
   audio_path?: string;
   duration?: number;
+  generation_time?: number | null;
   seed?: number;
   instruct?: string;
   engine?: string;

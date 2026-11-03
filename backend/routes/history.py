@@ -104,6 +104,7 @@ async def get_generation(
         language=gen.language,
         audio_path=gen.audio_path,
         duration=gen.duration,
+        generation_time=gen.generation_time,
         seed=gen.seed,
         instruct=gen.instruct,
         engine=gen.engine or "qwen",

@@ -1,6 +1,6 @@
 {
   "name": "voicebox",
-  "version": "0.6.24",
+  "version": "0.6.25",
   "private": true,
   "workspaces": [
     "app",

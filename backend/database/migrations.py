@@ -166,6 +166,10 @@ def _migrate_generations(engine, inspector, tables: set[str]) -> None:
     if "generations" not in tables:
         return
     columns = _get_columns(inspector, "generations")
+    if "generation_time" not in columns:
+        _add_column(engine, "generations", "generation_time FLOAT", "generation_time")
+    if "generation_started_at" not in columns:
+        _add_column(engine, "generations", "generation_started_at DATETIME", "generation_started_at")
     if "status" not in columns:
         _add_column(engine, "generations", "status VARCHAR DEFAULT 'completed'", "status")
     if "error" not in columns:

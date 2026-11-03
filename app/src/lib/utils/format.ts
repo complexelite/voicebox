@@ -8,6 +8,16 @@ export function formatDuration(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+export function formatGenerationTime(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const remainder = total % 60;
+  return [hours ? `${hours}h` : '', minutes ? `${minutes}m` : '', `${remainder}s`]
+    .filter(Boolean)
+    .join(' ');
+}
+
 function getDateLocale() {
   switch (i18n.language) {
     case 'es':

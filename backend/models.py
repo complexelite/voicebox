@@ -111,6 +111,7 @@ class GenerationResponse(BaseModel):
     language: str
     audio_path: Optional[str] = None
     duration: Optional[float] = None
+    generation_time: Optional[float] = None
     seed: Optional[int] = None
     instruct: Optional[str] = None
     engine: Optional[str] = "qwen"
@@ -146,6 +147,7 @@ class HistoryResponse(BaseModel):
     language: str
     audio_path: Optional[str] = None
     duration: Optional[float] = None
+    generation_time: Optional[float] = None
     seed: Optional[int] = None
     instruct: Optional[str] = None
     engine: Optional[str] = "qwen"
