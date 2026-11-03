@@ -323,6 +323,7 @@ export interface TranscriptionResponse {
 }
 
 export interface HealthResponse {
+  version?: string;
   status: string;
   model_loaded: boolean;
   model_downloaded?: boolean;

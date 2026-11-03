@@ -6,6 +6,7 @@
  * Response model for health check.
  */
 export type HealthResponse = {
+  version?: string | null;
   status: string;
   model_loaded: boolean;
   model_downloaded?: boolean | null;

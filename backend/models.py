@@ -473,6 +473,7 @@ class CaptureReadinessResponse(BaseModel):
 class HealthResponse(BaseModel):
     """Response model for health check."""
 
+    version: Optional[str] = None
     status: str
     model_loaded: bool
     model_downloaded: Optional[bool] = None  # Whether model is cached/downloaded

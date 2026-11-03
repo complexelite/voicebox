@@ -5,6 +5,17 @@
 export const $HealthResponse = {
   description: `Response model for health check.`,
   properties: {
+    version: {
+      type: 'any-of',
+      contains: [
+        {
+          type: 'string',
+        },
+        {
+          type: 'null',
+        },
+      ],
+    },
     status: {
       type: 'string',
       isRequired: true,

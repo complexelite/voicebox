@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils/cn';
 import { usePlatform } from '@/platform/PlatformContext';
 import type { UpdateStatus } from '@/platform/types';
 import { usePlayerStore } from '@/stores/playerStore';
+import { apiClient } from '@/lib/api/client';
 import { version } from '../../package.json';
 
 interface SidebarProps {
@@ -36,7 +37,13 @@ export function Sidebar({ isMacOS }: SidebarProps) {
   const platform = usePlatform();
 
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>(platform.updater.getStatus());
+  const [serverVersion, setServerVersion] = useState('');
   useEffect(() => platform.updater.subscribe(setUpdateStatus), [platform.updater]);
+  useEffect(() => {
+    apiClient.getHealth()
+      .then((health) => setServerVersion(health.version ?? ''))
+      .catch(() => setServerVersion(''));
+  }, []);
 
   return (
     <div
@@ -96,7 +103,13 @@ export function Sidebar({ isMacOS }: SidebarProps) {
         className="mt-auto flex flex-col items-center gap-1.5 transition-all duration-300"
         style={{ paddingBottom: isPlayerOpen ? '7rem' : undefined }}
       >
-        <span className="text-[10px] text-muted-foreground/50">v{version}</span>
+        <span
+          className="text-[10px] text-muted-foreground/50"
+          title={`Server v${serverVersion || 'unknown'} · Web v${version}`}
+        >
+          server v{serverVersion || '—'}
+        </span>
+        <span className="text-[9px] text-muted-foreground/40">web v{version}</span>
         {updateStatus.available && (
           <Link
             to="/settings"
