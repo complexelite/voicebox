@@ -63,6 +63,13 @@ def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def _utc_naive(value: datetime) -> datetime:
+    """Normalize database timestamps to naive UTC for safe arithmetic."""
+    if value.tzinfo is not None:
+        return value.astimezone(UTC).replace(tzinfo=None)
+    return value
+
+
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
@@ -127,7 +134,7 @@ async def remote_job_reaper() -> None:
                     job.status = "queued"
                     job.worker_id = None
                     job.lease_until = None
-                age = (now - (job.created_at or now)).total_seconds()
+                age = (now - _utc_naive(job.created_at or now)).total_seconds()
                 if (job.status == "queued" and (job.attempts >= 2 or age >= 300)):
                     payload = dict(job.payload or {})
                     gen = db.query(DBGeneration).filter_by(id=job.generation_id).first()
@@ -539,7 +546,7 @@ async def complete_job(
             generation_id=gen.id, status="completed", db=db,
             audio_path=audio_path, duration=duration,
             generation_time=(
-                max(0.0, (_now() - gen.generation_started_at.replace(tzinfo=UTC)).total_seconds())
+                max(0.0, (_now() - _utc_naive(gen.generation_started_at)).total_seconds())
                 if gen.generation_started_at else None
             ),
         )
