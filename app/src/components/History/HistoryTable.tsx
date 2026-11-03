@@ -10,6 +10,7 @@ import {
   RotateCcw,
   Square,
   Star,
+  Timer,
   Trash2,
   Wand2,
 } from 'lucide-react';
@@ -552,8 +553,13 @@ export function HistoryTable() {
                         ) : null}
                       </div>
                       {!isInProgress && !isFailed && gen.generation_time != null && Number.isFinite(gen.generation_time) && (
-                        <div className="text-xs text-muted-foreground" title="Time to generate audio, including model loading and processing">
-                          Generated in {formatGenerationTime(gen.generation_time)}
+                        <div
+                          className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                          title="Time to generate audio, including model loading and processing"
+                          aria-label={`Generation time: ${formatGenerationTime(gen.generation_time)}`}
+                        >
+                          <Timer className="h-3 w-3 shrink-0" aria-hidden="true" />
+                          <span>{formatGenerationTime(gen.generation_time)}</span>
                         </div>
                       )}
                       {gen.worker_name && (isInProgress || ['completed', 'failed'].includes(gen.worker_status ?? '')) && (
