@@ -8,7 +8,6 @@ import { usePlatform } from '@/platform/PlatformContext';
 import type { UpdateStatus } from '@/platform/types';
 import { usePlayerStore } from '@/stores/playerStore';
 import { apiClient } from '@/lib/api/client';
-import { version } from '../../package.json';
 
 interface SidebarProps {
   isMacOS?: boolean;
@@ -105,11 +104,10 @@ export function Sidebar({ isMacOS }: SidebarProps) {
       >
         <span
           className="text-[10px] text-muted-foreground/50"
-          title={`Server v${serverVersion || 'unknown'} · Web v${version}`}
+          aria-label={`Voicebox version ${serverVersion || 'unknown'}`}
         >
-          server v{serverVersion || '—'}
+          v{serverVersion || '—'}
         </span>
-        <span className="text-[9px] text-muted-foreground/40">web v{version}</span>
         {updateStatus.available && (
           <Link
             to="/settings"
