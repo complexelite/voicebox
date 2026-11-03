@@ -59,7 +59,7 @@ import {
   useImportGeneration,
 } from '@/lib/hooks/useHistory';
 import { cn } from '@/lib/utils/cn';
-import { formatDate, formatDuration, formatEngineName } from '@/lib/utils/format';
+import { formatDate, formatDuration, formatEngineName, formatGenerationTime } from '@/lib/utils/format';
 import { useGenerationStore } from '@/stores/generationStore';
 import { usePlayerStore } from '@/stores/playerStore';
 
@@ -551,6 +551,11 @@ export function HistoryTable() {
                           </span>
                         ) : null}
                       </div>
+                      {!isInProgress && !isFailed && gen.generation_time != null && Number.isFinite(gen.generation_time) && (
+                        <div className="text-xs text-muted-foreground" title="Time to generate audio, including model loading and processing">
+                          Generated in {formatGenerationTime(gen.generation_time)}
+                        </div>
+                      )}
                       {gen.worker_name && (isInProgress || ['completed', 'failed'].includes(gen.worker_status ?? '')) && (
                         <div className={cn('text-xs font-medium', gen.worker_status === 'failed' ? 'text-destructive' : 'text-emerald-700 dark:text-emerald-300')}>
                           {gen.worker_status === 'completed'

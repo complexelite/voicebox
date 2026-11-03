@@ -157,6 +157,7 @@ async def update_generation_status(
     audio_path: Optional[str] = None,
     duration: Optional[float] = None,
     error: Optional[str] = None,
+    generation_time: Optional[float] = None,
 ) -> Optional[GenerationResponse]:
     """Update the status of a generation (used by async generation flow)."""
     generation = db.query(DBGeneration).filter_by(id=generation_id).first()
@@ -164,6 +165,8 @@ async def update_generation_status(
         return None
 
     generation.status = status
+    if generation_time is not None:
+        generation.generation_time = generation_time
     if audio_path is not None:
         generation.audio_path = audio_path
     if duration is not None:
@@ -269,6 +272,7 @@ async def list_generations(
             language=generation.language,
             audio_path=generation.audio_path,
             duration=generation.duration,
+            generation_time=generation.generation_time,
             seed=generation.seed,
             instruct=generation.instruct,
             engine=generation.engine or "qwen",

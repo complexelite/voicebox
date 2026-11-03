@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import traceback
 from typing import Literal, Optional
 
@@ -74,6 +75,7 @@ async def run_generation(
     from ..utils.chunked_tts import generate_chunked
     from ..utils.audio import has_tts_runaway, normalize_audio, save_audio, trim_tts_output
 
+    generation_started = time.perf_counter()
     task_manager = get_task_manager()
     bg_db = next(get_db())
     tts_model = None
@@ -150,6 +152,7 @@ async def run_generation(
             db=bg_db,
             audio_path=final_path,
             duration=duration,
+            generation_time=time.perf_counter() - generation_started,
         )
 
     except asyncio.CancelledError:

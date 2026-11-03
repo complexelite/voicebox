@@ -70,6 +70,8 @@ class Generation(Base):
     language = Column(String, default="en")
     audio_path = Column(String, nullable=True)
     duration = Column(Float, nullable=True)
+    generation_time = Column(Float, nullable=True)
+    generation_started_at = Column(DateTime, nullable=True)
     seed = Column(Integer)
     instruct = Column(Text)
     engine = Column(String, default="qwen")
