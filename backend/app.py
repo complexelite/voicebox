@@ -176,7 +176,7 @@ def create_app() -> FastAPI:
 
     @application.middleware("http")
     async def protect_remote_access(request, call_next):
-        if request.url.path in {"/auth/start", "/auth/perfex", "/auth/logout"}:
+        if request.url.path in {"/auth/start", "/auth/perfex", "/auth/logout", "/auth/slo-logout"}:
             return await call_next(request)
 
         # The installer endpoint accepts only an expiring, single-use ticket
@@ -301,7 +301,14 @@ def create_app() -> FastAPI:
 
     @application.get("/auth/logout")
     async def logout_perfex_session():
-        response = RedirectResponse(os.environ.get("VOICEBOX_PERFEX_ADMIN_URL", "https://clients.complexelite.com/admin"), status_code=303, headers={"Cache-Control": "no-store"})
+        response = RedirectResponse("https://clients.complexelite.com/studio/sso/logout", status_code=303, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+        response.delete_cookie(perfex_sso.SESSION_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+        response.delete_cookie(perfex_sso.STATE_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+        return response
+
+    @application.get("/auth/slo-logout")
+    async def sign_out_from_all_apps():
+        response = RedirectResponse("https://clients.complexelite.com/studio/sso/logout?step=4", status_code=303, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
         response.delete_cookie(perfex_sso.SESSION_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
         response.delete_cookie(perfex_sso.STATE_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
         return response
